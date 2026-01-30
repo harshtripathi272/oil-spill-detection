@@ -10,4 +10,5 @@ apache-airflow-providers-docker
 pytest
 black
 flake8
+pydantic>=2.0
 mypy

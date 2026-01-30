@@ -1,4 +1,4 @@
-version: '3.8'
+# version: '3.8'
 
 x-airflow-common:
   &airflow-common
@@ -27,12 +27,12 @@ x-airflow-common:
       condition: service_healthy
 
 services:
-  # ---------------------------------------------------------------------------
-  # KAFKA & ZOOKEEPER
-  # ---------------------------------------------------------------------------
+  
+  # KAFKA
+  
   kafka:
     image: confluentinc/cp-kafka:7.5.0
-    container_name: kafka
+    # container_name: kafka
     ports:
       - "9092:9092"
       - "29092:29092"
@@ -54,9 +54,9 @@ services:
 
       CLUSTER_ID: MkU3OJKBNTcwNTJENDM2Qm
 
-  # ---------------------------------------------------------------------------
+  
   # AIRFLOW
-  # ---------------------------------------------------------------------------
+  
   postgres:
     image: postgres:13
     container_name: airflow-postgres

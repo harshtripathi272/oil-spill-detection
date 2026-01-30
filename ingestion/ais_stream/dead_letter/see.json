@@ -1,0 +1,100 @@
+[
+  {
+    "Message": {
+      "PositionReport": {
+        "Cog": 0,
+        "CommunicationState": 2283,
+        "Latitude": 57.94077166666667,
+        "Longitude": 11.572245,
+        "MessageID": 1,
+        "NavigationalStatus": 15,
+        "PositionAccuracy": false,
+        "Raim": false,
+        "RateOfTurn": -128,
+        "RepeatIndicator": 0,
+        "Sog": 0,
+        "Spare": 0,
+        "SpecialManoeuvreIndicator": 0,
+        "Timestamp": 40,
+        "TrueHeading": 511,
+        "UserID": 266425000,
+        "Valid": true
+      }
+    },
+    "MessageType": "PositionReport",
+    "MetaData": {
+      "MMSI": 266425000,
+      "MMSI_String": 266425000,
+      "ShipName": "MY EAGLE",
+      "latitude": 57.94077166666667,
+      "longitude": 11.572245,
+      "time_utc": "2026-01-30 17:13:40.186926422 +0000 UTC"
+    }
+  },
+  {
+    "Message": {
+      "PositionReport": {
+        "Cog": 251.7,
+        "CommunicationState": 82010,
+        "Latitude": 59.646565,
+        "Longitude": 23.513333333333332,
+        "MessageID": 1,
+        "NavigationalStatus": 0,
+        "PositionAccuracy": true,
+        "Raim": false,
+        "RateOfTurn": -13,
+        "RepeatIndicator": 0,
+        "Sog": 22.6,
+        "Spare": 0,
+        "SpecialManoeuvreIndicator": 0,
+        "Timestamp": 39,
+        "TrueHeading": 252,
+        "UserID": 230981000,
+        "Valid": true
+      }
+    },
+    "MessageType": "PositionReport",
+    "MetaData": {
+      "MMSI": 230981000,
+      "MMSI_String": 230981000,
+      "ShipName": "FINNSTAR",
+      "latitude": 59.646565,
+      "longitude": 23.513333333333332,
+      "time_utc": "2026-01-30 17:13:40.191158316 +0000 UTC"
+    }
+  },
+  {
+    "Message": {
+      "PositionReport": {
+        "Cog": 25.8,
+        "CommunicationState": 84938,
+        "Latitude": 49.53362666666667,
+        "Longitude": -0.48346999999999996,
+        "MessageID": 3,
+        "NavigationalStatus": 1,
+        "PositionAccuracy": true,
+        "Raim": false,
+        "RateOfTurn": 11,
+        "RepeatIndicator": 0,
+        "Sog": 0.1,
+        "Spare": 0,
+        "SpecialManoeuvreIndicator": 0,
+        "Timestamp": 39,
+        "TrueHeading": 272,
+        "UserID": 249086000,
+        "Valid": true
+      }
+    },
+    "MessageType": "PositionReport",
+    "MetaData": {
+      "MMSI": 249086000,
+      "MMSI_String": 249086000,
+      "ShipName": "SCOT BREMEN         ",
+      "latitude": 49.53362666666667,
+      "longitude": -0.48346999999999996,
+      "time_utc": "2026-01-30 17:13:40.198487467 +0000 UTC"
+    }
+  }
+]
+
+
