@@ -1,0 +1,13 @@
+websockets
+asyncio
+python-dotenv
+kafka-python
+pandas
+polars
+apache-airflow
+apache-airflow-providers-cncf-kubernetes
+apache-airflow-providers-docker
+pytest
+black
+flake8
+mypy
