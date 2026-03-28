@@ -7,9 +7,8 @@ independent of specific AIS events.
 """
 
 from airflow import DAG
-from airflow.sensors.base import BaseSensorOperator
-from airflow.operators.dummy_operator import DummyOperator
-from airflow.operators.python_operator import PythonOperator
+from airflow.operators.empty import EmptyOperator
+from airflow.operators.python import PythonOperator
 from airflow.utils.dates import days_ago
 from datetime import timedelta
 from orchestration.sensors.sentinel_availability_sensor import SentinelAvailabilitySensor
@@ -41,7 +40,7 @@ with DAG(
     tags=['monitoring', 'sentinel'],
 ) as dag:
 
-    start = DummyOperator(task_id='start')
+    start = EmptyOperator(task_id='start')
 
     wait_for_data = SentinelAvailabilitySensor(
         task_id='wait_for_sentinel_data',
@@ -54,10 +53,9 @@ with DAG(
 
     notify = PythonOperator(
         task_id='notify_data_available',
-        python_callable=notify_availability,
-        provide_context=True
+        python_callable=notify_availability
     )
     
-    end = DummyOperator(task_id='end')
+    end = EmptyOperator(task_id='end')
 
     start >> wait_for_data >> notify >> end
