@@ -12,3 +12,4 @@ black
 flake8
 pydantic>=2.0
 mypy
+sentinelsat>=1.2.1
