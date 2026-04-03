@@ -1,0 +1,26 @@
+program: training/yolo/sweep_yolo.py
+method: bayes
+metric:
+  name: val/dice
+  goal: maximize
+parameters:
+  epochs:
+    value: 50
+  model:
+    value: yolo11n-seg.pt
+  imgsz:
+    values: [512, 640, 768]
+  batch:
+    values: [4, 8, 12]
+  lr0:
+    min: 0.00005
+    max: 0.005
+  weight_decay:
+    min: 0.00001
+    max: 0.001
+  optimizer:
+    values: [AdamW, SGD]
+  conf_thres:
+    values: [0.2, 0.25, 0.3, 0.35]
+  seed:
+    values: [42, 43, 44]

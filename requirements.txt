@@ -13,3 +13,14 @@ flake8
 pydantic>=2.0
 mypy
 sentinelsat>=1.2.1
+tifffile
+imagecodecs
+tqdm
+wandb
+ultralytics
+torch
+torchvision
+segmentation-models-pytorch
+albumentations
+PyYAML
+scikit-image
