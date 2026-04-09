@@ -10,9 +10,8 @@ from airflow.models import BaseOperator
 from airflow.exceptions import AirflowException
 from airflow.utils.decorators import apply_defaults
 import logging
-import os
 
-from sentinelsat import SentinelAPI
+import asf_search as asf
 
 class SentinelSearchOperator(BaseOperator):
     """
@@ -43,16 +42,8 @@ class SentinelSearchOperator(BaseOperator):
         if not self.roi_wkt or not self.start_date or not self.end_date:
             raise AirflowException("roi_wkt, start_date, and end_date are required for Sentinel search.")
 
-        username = os.getenv("COPERNICUS_USER")
-        password = os.getenv("COPERNICUS_PASSWORD")
-
-        if not username or not password:
-            raise ValueError(
-                "Missing Copernicus credentials. Set COPERNICUS_USER and COPERNICUS_PASSWORD environment variables."
-            )
-
         try:
-            found_products = self._search_products(username=username, password=password)
+            found_products = self._search_products()
         except Exception as exc:
             raise AirflowException(f"Sentinel search failed: {exc}") from exc
         
@@ -63,36 +54,70 @@ class SentinelSearchOperator(BaseOperator):
         logging.info(f"Found {len(found_products)} products.")
         return found_products
 
-    def _search_products(self, username: str, password: str):
-        """Query Copernicus catalog for Sentinel-1 GRD products in the requested window and ROI."""
-        api = SentinelAPI(
-            user=username,
-            password=password,
-            api_url="https://apihub.copernicus.eu/apihub",
-        )
+    def _search_products(self):
+        """Query ASF for Sentinel-1 GRD products in the requested window and ROI."""
+        query_kwargs = {
+            "platform": "SENTINEL-1",
+            "processingLevel": "GRD",
+            "intersectsWith": self.roi_wkt,
+            "start": self.start_date,
+            "end": self.end_date,
+        }
+        logging.debug("ASF search query parameters: %s", query_kwargs)
 
-        products = api.query(
-            area=self.roi_wkt,
-            date=(self.start_date, self.end_date),
-            platformname="Sentinel-1",
-            producttype="GRD",
-            sensoroperationalmode="IW",
-        )
-
-        if not isinstance(products, dict):
-            raise AirflowException("Unexpected response type from Sentinel API query.")
+        results = asf.search(**query_kwargs)
+        if results is None:
+            return []
 
         formatted = []
-        for product_id, meta in products.items():
-            formatted.append(
-                {
-                    "product_id": product_id,
-                    "filename": meta.get("filename"),
-                    "size": meta.get("size"),
-                    "platform": meta.get("platformname"),
-                    "acquisition_date": str(meta.get("beginposition")),
-                    "title": meta.get("title"),
-                }
+        for product in list(results):
+            file_name = self._extract_product_field(product, "fileName") or self._extract_product_field(product, "fileID")
+            start_time = self._extract_product_field(product, "startTime")
+            url = self._extract_product_field(product, "url")
+            product_id = (
+                self._extract_product_field(product, "sceneName")
+                or self._extract_product_field(product, "fileID")
+                or file_name
             )
 
+            formatted_product = {
+                "product_id": product_id,
+                "filename": file_name,
+                "fileName": file_name,
+                "url": url,
+                "startTime": str(start_time) if start_time is not None else None,
+                "acquisition_date": str(start_time) if start_time is not None else None,
+                "platform": "SENTINEL-1",
+                "processingLevel": "GRD",
+                "title": file_name,
+            }
+            logging.debug("ASF product mapped for XCom: %s", formatted_product)
+            formatted.append(formatted_product)
+
         return formatted
+
+    @staticmethod
+    def _extract_product_field(product, field_name: str):
+        """Read a field from ASFProduct-like objects with best-effort compatibility."""
+        if isinstance(product, dict):
+            return product.get(field_name)
+
+        properties = getattr(product, "properties", None)
+        if isinstance(properties, dict) and field_name in properties:
+            return properties.get(field_name)
+
+        direct = getattr(product, field_name, None)
+        if direct is not None:
+            return direct
+
+        if hasattr(product, "geojson") and callable(product.geojson):
+            try:
+                geojson_obj = product.geojson()
+                if isinstance(geojson_obj, dict):
+                    props = geojson_obj.get("properties", {})
+                    if isinstance(props, dict):
+                        return props.get(field_name)
+            except Exception:
+                return None
+
+        return None

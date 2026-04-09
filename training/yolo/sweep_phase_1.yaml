@@ -1,0 +1,49 @@
+method: bayes
+
+program: oil-spill-detection/training/yolo/sweep_yolo.py
+metric:
+  name: sweep_metric
+  goal: maximize
+
+parameters:
+  lrf:
+    min: 0.01
+    max: 0.2
+  lr0:
+    distribution: log_uniform_values
+    min: 3e-5
+    max: 3e-3
+
+  weight_decay:
+    distribution: log_uniform_values
+    min: 1e-6
+    max: 1e-3
+
+
+
+  batch:
+    values: [16, 24, 32, 48]
+
+  imgsz:
+    values: [640, 768, 896]
+
+  optimizer:
+    values: ["AdamW"]
+
+  momentum:
+    values: [0.937]
+
+  warmup_epochs:
+    values: [1, 2, 3]
+
+  mosaic:
+    values: [0.5, 1.0]
+
+  close_mosaic:
+    values: [5, 10, 15]
+
+  epochs:
+    value: 60
+early_terminate:
+  type: hyperband
+  min_iter: 10
