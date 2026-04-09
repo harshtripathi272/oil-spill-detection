@@ -1,0 +1,9 @@
+.git
+.gitignore
+__pycache__/
+.ipynb_checkpoints/
+venv/
+runs/
+datasets/images/
+datasets/labels/
+orchestration/logs/
