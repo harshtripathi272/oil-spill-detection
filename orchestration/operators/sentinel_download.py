@@ -12,7 +12,7 @@ from airflow.utils.decorators import apply_defaults
 import logging
 import os
 
-from sentinelsat import SentinelAPI
+import asf_search as asf
 
 class SentinelDownloadOperator(BaseOperator):
     """
@@ -48,22 +48,18 @@ class SentinelDownloadOperator(BaseOperator):
         downloaded_paths = []
         os.makedirs(self.download_dir, exist_ok=True)
 
-        username = os.getenv("COPERNICUS_USER")
-        password = os.getenv("COPERNICUS_PASSWORD")
+        username = os.getenv("EARTHDATA_USERNAME")
+        password = os.getenv("EARTHDATA_PASSWORD")
 
         if not username or not password:
             raise ValueError(
-                "Missing Copernicus credentials. Set COPERNICUS_USER and COPERNICUS_PASSWORD environment variables."
+                "Missing Earthdata credentials. Set EARTHDATA_USERNAME and EARTHDATA_PASSWORD environment variables."
             )
 
         try:
-            api = SentinelAPI(
-                user=username,
-                password=password,
-                api_url="https://apihub.copernicus.eu/apihub",
-            )
+            session = asf.ASFSession().auth_with_creds(username, password)
         except Exception as exc:
-            raise AirflowException(f"Failed to initialize Sentinel API client: {exc}") from exc
+            raise AirflowException(f"Failed to initialize ASF authenticated session: {exc}") from exc
 
         for product in products:
             if not isinstance(product, dict):
@@ -71,7 +67,7 @@ class SentinelDownloadOperator(BaseOperator):
                 continue
 
             try:
-                file_path = self._download_product(api=api, product=product)
+                file_path = self._download_product(session=session, product=product)
             except Exception as exc:
                 product_id = product.get("product_id", "unknown")
                 logging.warning(f"Download failed for product {product_id}: {exc}")
@@ -85,21 +81,48 @@ class SentinelDownloadOperator(BaseOperator):
             
         return downloaded_paths
 
-    def _download_product(self, api: SentinelAPI, product: dict):
-        """Downloads a Sentinel-1 product from Copernicus hub and returns the local file path."""
-        product_id = product.get("product_id")
-        product_name = product.get("filename") or product.get("title") or "unknown_product"
+    def _download_product(self, session, product: dict):
+        """Download one product via ASF URL and return the local path."""
+        product_name = product.get("fileName") or product.get("filename") or product.get("title") or "unknown_product"
+        download_url = product.get("url")
 
-        if not product_id:
-            logging.warning(f"Skipping product without product_id: {product}")
+        if not download_url:
+            logging.warning("Skipping product without download URL: %s", product)
             return None
 
-        logging.info(f"Downloading Sentinel product {product_name} ({product_id}) to {self.download_dir}")
-        download_result = api.download(product_id, directory_path=self.download_dir)
+        logging.info("Downloading ASF product %s from %s to %s", product_name, download_url, self.download_dir)
+        download_result = asf.download_url(
+            url=download_url,
+            path=self.download_dir,
+            filename=product_name,
+            session=session,
+        )
 
-        local_path = download_result.get("path")
+        local_path = self._resolve_local_path(download_result, self.download_dir, product_name)
         if not local_path:
-            logging.warning(f"Download completed but no local path returned for {product_id}")
+            logging.warning("Download completed but no local path returned for URL: %s", download_url)
             return None
 
         return local_path
+
+    @staticmethod
+    def _resolve_local_path(download_result, download_dir: str, fallback_name: str):
+        """Normalize asf_search download return types into a local filesystem path."""
+        if isinstance(download_result, str):
+            return download_result
+
+        if isinstance(download_result, dict):
+            return download_result.get("path") or download_result.get("file")
+
+        if isinstance(download_result, (list, tuple)) and download_result:
+            first = download_result[0]
+            if isinstance(first, str):
+                return first
+            if isinstance(first, dict):
+                return first.get("path") or first.get("file")
+
+        candidate = os.path.join(download_dir, fallback_name)
+        if os.path.exists(candidate):
+            return candidate
+
+        return None

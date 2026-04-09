@@ -9,3 +9,5 @@ __pycache__/
 *.pyd
 
 logs/
+.ipynb_checkpoints/
+runs/

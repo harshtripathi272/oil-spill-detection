@@ -8,9 +8,9 @@ export WANDB_PROJECT=${WANDB_PROJECT:-oilspill}
 
 python training/yolo/train_yolo.py \
   --data datasets/dataset.yaml \
-  --model yolo11n-seg.pt \
+  --model yolo11x-seg.pt \
   --epochs 50 \
   --imgsz 640 \
-  --batch 8 \
-  --device 0 \
-  --run-name yolo11n-seg-baseline
+  --batch 16 \
+  --device 1 \
+  --run-name yolo11x-seg-baseline

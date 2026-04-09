@@ -4,12 +4,10 @@ import argparse
 import json
 import sys
 from pathlib import Path
-
+from ultralytics import YOLO
 import cv2
 import numpy as np
 import wandb
-from ultralytics import YOLO
-
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -21,17 +19,17 @@ from training.common.seed import seed_everything
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train YOLO11 segmentation with W&B logging.")
     parser.add_argument("--data", type=Path, default=ROOT / "datasets/dataset.yaml")
-    parser.add_argument("--model", type=str, default="yolo11n-seg.pt")
-    parser.add_argument("--epochs", type=int, default=50)
+    parser.add_argument("--model", type=str, default="yolo11x-seg.pt")
+    parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--imgsz", type=int, default=640)
-    parser.add_argument("--batch", type=int, default=8)
+    parser.add_argument("--batch", type=int, default=16)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--lr0", type=float, default=1e-3)
     parser.add_argument("--weight-decay", type=float, default=5e-4)
     parser.add_argument("--optimizer", type=str, default="AdamW")
     parser.add_argument("--device", type=str, default="0")
     parser.add_argument("--project-dir", type=Path, default=ROOT / "runs/yolo")
-    parser.add_argument("--run-name", type=str, default="yolo11n-seg-baseline")
+    parser.add_argument("--run-name", type=str, default="yolo11x-seg-baseline")
     parser.add_argument("--wandb-project", type=str, default="oilspill")
     parser.add_argument("--wandb-entity", type=str, default=None)
     parser.add_argument("--seed", type=int, default=42)
@@ -92,8 +90,19 @@ def run_training(config: dict[str, object]) -> dict[str, float]:
         device=str(config["device"]),
         seed=int(config["seed"]),
         verbose=True,
+        patience=15,
+        momentum=float(config.get("momentum", 0.937)),
+        warmup_epochs=float(config.get("warmup_epochs", 3)),
+        hsv_h=float(config.get("hsv_h", 0.015)),
+        hsv_s=float(config.get("hsv_s", 0.7)),
+        hsv_v=float(config.get("hsv_v", 0.4)),
+        degrees=float(config.get("degrees", 0.0)),
+        scale=float(config.get("scale", 0.5)),
+        fliplr=float(config.get("fliplr", 0.5)),
+        mosaic=float(config.get("mosaic", 1.0)),
+        close_mosaic=int(config.get("close_mosaic", 10)),
     )
-
+    
     trained_run_dir = Path(config["project_dir"]) / str(config["run_name"])
     best_weights = trained_run_dir / "weights/best.pt"
     if best_weights.exists():
