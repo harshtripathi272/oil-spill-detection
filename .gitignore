@@ -2,9 +2,16 @@
 venv
 __pycache__/
 *.py[cod]
+/datasets
 
 # Optional: cache from other tools
 *.pyo
 *.pyd
 
 logs/
+.ipynb_checkpoints/
+runs/
+
+.airflow/
+airflow.log
+/wandb

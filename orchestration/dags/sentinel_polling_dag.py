@@ -7,11 +7,9 @@ independent of specific AIS events.
 """
 
 from airflow import DAG
-from airflow.sensors.base import BaseSensorOperator
-from airflow.operators.dummy_operator import DummyOperator
-from airflow.operators.python_operator import PythonOperator
-from airflow.utils.dates import days_ago
-from datetime import timedelta
+from airflow.operators.empty import EmptyOperator
+from airflow.operators.python import PythonOperator
+from datetime import datetime, timezone, timedelta
 from orchestration.sensors.sentinel_availability_sensor import SentinelAvailabilitySensor
 
 # Default arguments
@@ -35,18 +33,18 @@ with DAG(
     'sentinel_polling',
     default_args=default_args,
     description='Polls for Sentinel-1 availability in key regions',
-    schedule_interval='@daily',
-    start_date=days_ago(1),
+    schedule='@daily',
+    start_date=datetime.now(timezone.utc) - timedelta(days=1),
     catchup=False,
     tags=['monitoring', 'sentinel'],
 ) as dag:
 
-    start = DummyOperator(task_id='start')
+    start = EmptyOperator(task_id='start')
 
     wait_for_data = SentinelAvailabilitySensor(
         task_id='wait_for_sentinel_data',
         roi_bbox=MONITORED_ROI_BBOX,
-        date_range=("{{ ds }}", "{{ next_ds }}"), # Check for data generated today
+        date_range=("{{ macros.ds_add(ds, -1) }}", "{{ ds }}"),
         poke_interval=60 * 60, # Check every hour
         timeout=60 * 60 * 24, # Timeout after 24 hours
         mode='reschedule' # Release slot while waiting
@@ -54,10 +52,9 @@ with DAG(
 
     notify = PythonOperator(
         task_id='notify_data_available',
-        python_callable=notify_availability,
-        provide_context=True
+        python_callable=notify_availability
     )
     
-    end = DummyOperator(task_id='end')
+    end = EmptyOperator(task_id='end')
 
     start >> wait_for_data >> notify >> end

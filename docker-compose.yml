@@ -2,7 +2,12 @@
 
 x-airflow-common:
   &airflow-common
-  image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:2.8.0}
+  build:
+    context: .
+    dockerfile: docker/airflow/Dockerfile
+  image: ${AIRFLOW_IMAGE_NAME:-oilspill-airflow:2.8.0-custom}
+  env_file:
+    - ./.env
   environment:
     &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: CeleryExecutor
@@ -13,7 +18,9 @@ x-airflow-common:
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
     AIRFLOW__API__AUTH_BACKEND: 'airflow.api.auth.backend.basic_auth'
+    PYTHONPATH: /opt/airflow
   volumes:
+    - ./orchestration:/opt/airflow/orchestration
     - ./orchestration/dags:/opt/airflow/dags
     - ./orchestration/logs:/opt/airflow/logs
     - ./orchestration/plugins:/opt/airflow/plugins
@@ -135,8 +142,8 @@ services:
           echo "  echo 'AIRFLOW_UID=1000' >> .env"
           echo
         fi
-        mkdir -p /sources/logs /sources/dags /sources/plugins
-        chown -R "${AIRFLOW_UID}:0" /sources/{logs,dags,plugins}
+        mkdir -p /sources/logs /sources/dags /sources/plugins /sources/orchestration
+        chown -R "${AIRFLOW_UID}:0" /sources/{logs,dags,plugins,orchestration}
         exec /entrypoint airflow version
     # yamllint enable rule:line-length
     environment:
@@ -150,6 +157,7 @@ services:
       - ./orchestration/dags:/sources/dags
       - ./orchestration/logs:/sources/logs
       - ./orchestration/plugins:/sources/plugins
+      - ./orchestration:/sources/orchestration
 
 volumes:
   postgres-db-volume:

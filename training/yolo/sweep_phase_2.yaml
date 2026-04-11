@@ -1,0 +1,40 @@
+method: bayes
+
+program: oil-spill-detection/training/yolo/sweep_yolo.py
+
+metric:
+  name: sweep_metric
+  goal: maximize
+
+parameters:
+  hsv_h:
+    min: 0.0
+    max: 0.03
+
+  hsv_s:
+    min: 0.4
+    max: 0.8
+
+  hsv_v:
+    min: 0.3
+    max: 0.6
+
+  degrees:
+    min: 0.0
+    max: 5.0
+
+  scale:
+    min: 0.3
+    max: 0.8
+
+  fliplr:
+    values: [0.0, 0.5]
+
+  mosaic:
+    values: [0.5, 1.0]
+
+  close_mosaic:
+    values: [5, 10, 15]
+
+  epochs:
+    value: 60

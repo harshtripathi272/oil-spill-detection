@@ -7,9 +7,8 @@ Sentinel-1 imagery, running the oil spill detection model, and updating the inci
 """
 
 from airflow import DAG
-from airflow.operators.python_operator import PythonOperator
-from airflow.utils.dates import days_ago
-from datetime import timedelta
+from airflow.operators.python import PythonOperator
+from datetime import datetime, timedelta, timezone
 from orchestration.utils.state_store import StateStore, STATE_PROCESSING, STATE_VERIFIED, STATE_FAILED
 from orchestration.utils.geometry import create_buffer_bbox, wkt_from_bbox
 from orchestration.operators.sentinel_search import SentinelSearchOperator
@@ -45,14 +44,30 @@ def prepare_search_params(**context):
     lon = conf.get('lon')
     event_time = conf.get('timestamp') # ISO string expected
 
+    if lat is None or lon is None:
+        raise ValueError("Both lat and lon must be provided in DAG run configuration.")
+
+    if not event_time:
+        raise ValueError("No timestamp provided in DAG run configuration.")
+
     # Create 20km buffer
     bbox = create_buffer_bbox(lat, lon, radius_km=20.0)
     wkt = wkt_from_bbox(bbox)
     
-    # Simple date logic: search for images +/- 24 hours around event
-    # In a real app we'd parse event_time properly
-    start_date = "2023-10-24T00:00:00Z" 
-    end_date = "2023-10-26T00:00:00Z"
+    normalized_event_time = event_time.replace('Z', '+00:00')
+    try:
+        event_dt = datetime.fromisoformat(normalized_event_time)
+    except ValueError as exc:
+        raise ValueError(f"Invalid timestamp format: {event_time}. Expected ISO-8601 format.") from exc
+
+    if event_dt.tzinfo is None:
+        event_dt = event_dt.replace(tzinfo=timezone.utc)
+    else:
+        event_dt = event_dt.astimezone(timezone.utc)
+
+    # Search for images in a 48-hour window centered on the AIS event.
+    start_date = (event_dt - timedelta(hours=24)).strftime('%Y-%m-%dT%H:%M:%SZ')
+    end_date = (event_dt + timedelta(hours=24)).strftime('%Y-%m-%dT%H:%M:%SZ')
     
     return {
         "roi_wkt": wkt,
@@ -68,7 +83,12 @@ def process_results(**context):
     incident_id = conf.get('incident_id')
     
     store = StateStore()
-    if results and any(r['prediction'] == 'oil_spill' for r in results):
+    if not isinstance(results, list):
+        store.update_incident_state(incident_id, STATE_FAILED, metadata={"reason": "Invalid inference result format"})
+        return
+
+    has_spill = any(isinstance(r, dict) and r.get('prediction') == 'oil_spill' for r in results)
+    if has_spill:
         store.update_incident_state(incident_id, STATE_VERIFIED, metadata={"inference": results})
     else:
         # If no oil spill detected or no images, technically not 'FAILED' but 'CLEARED' or 'NO_DATA'
@@ -80,32 +100,28 @@ with DAG(
     'suspicious_event_validation',
     default_args=default_args,
     description='Validates suspicious AIS events using Sentinel-1 imagery',
-    schedule_interval=None, # Triggered externally
-    start_date=days_ago(1),
+    schedule=None, # Triggered externally
+    start_date=datetime.now(timezone.utc) - timedelta(days=1),
     tags=['event_driven', 'ais', 'oil_spill'],
 ) as dag:
 
     init_task = PythonOperator(
         task_id='initialize_incident',
-        python_callable=initialize_incident,
-        provide_context=True
+        python_callable=initialize_incident
     )
 
     prepare_params_task = PythonOperator(
         task_id='prepare_search_params',
-        python_callable=prepare_search_params,
-        provide_context=True
+        python_callable=prepare_search_params
     )
 
-    # Note: Params passed via XCom/Op args would need templating or dynamic mapping in a real complex setup.
-    # For simplicity, we assume the operator grabs XCom from prepare_params_task or we pass specific args.
-    # Airflow templates {{ task_instance.xcom_pull(...) }} are standard.
+    # Params are passed via Jinja-templated XCom pulls from prepare_search_params return payload.
     
     search_sentinel = SentinelSearchOperator(
         task_id='search_sentinel',
-        roi_wkt="{{ task_instance.xcom_pull(task_ids='prepare_search_params')['roi_wkt'] }}",
-        start_date="{{ task_instance.xcom_pull(task_ids='prepare_search_params')['start_date'] }}",
-        end_date="{{ task_instance.xcom_pull(task_ids='prepare_search_params')['end_date'] }}",
+        roi_wkt="{{ ti.xcom_pull(task_ids='prepare_search_params', key='return_value')['roi_wkt'] }}",
+        search_start="{{ ti.xcom_pull(task_ids='prepare_search_params', key='return_value')['start_date'] }}",
+        search_end="{{ ti.xcom_pull(task_ids='prepare_search_params', key='return_value')['end_date'] }}",
     )
 
     download_sentinel = SentinelDownloadOperator(
@@ -120,8 +136,7 @@ with DAG(
     
     finalize_task = PythonOperator(
         task_id='finalize_incident',
-        python_callable=process_results,
-        provide_context=True
+        python_callable=process_results
     )
 
     init_task >> prepare_params_task >> search_sentinel >> download_sentinel >> sar_inference >> finalize_task
