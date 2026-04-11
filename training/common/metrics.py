@@ -29,3 +29,17 @@ def binary_metrics(pred: np.ndarray, target: np.ndarray, eps: float = 1e-8) -> d
         "fn": float(fn),
         "tn": float(tn),
     }
+
+
+def map_metrics_from_ious(ious: list[float]) -> dict[str, float]:
+    if not ious:
+        return {"map50": 0.0, "map50_95": 0.0}
+
+    iou_arr = np.asarray(ious, dtype=np.float32)
+    thresholds = np.arange(0.50, 1.00, 0.05, dtype=np.float32)
+    ap_by_threshold = [float(np.mean(iou_arr >= thr)) for thr in thresholds]
+
+    return {
+        "map50": ap_by_threshold[0],
+        "map50_95": float(np.mean(ap_by_threshold)),
+    }

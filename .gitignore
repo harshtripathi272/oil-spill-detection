@@ -14,3 +14,4 @@ runs/
 
 .airflow/
 airflow.log
+/wandb

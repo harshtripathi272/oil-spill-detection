@@ -17,6 +17,8 @@ def main() -> None:
     with wandb.init(project=os.getenv("WANDB_PROJECT", "oilspill")):
         cfg = dict(wandb.config)
         cfg.setdefault("data_root", ROOT / "datasets")
+        cfg.setdefault("mask_source", "auto")
+        cfg.setdefault("masks_subdir", "masks")
         cfg.setdefault("encoder", "efficientnet-b0")
         cfg.setdefault("epochs", 40)
         cfg.setdefault("image_size", 512)

@@ -27,6 +27,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--image-size", type=int, default=512)
     parser.add_argument("--threshold", type=float, default=0.5)
     parser.add_argument("--device", type=str, default="0")
+    parser.add_argument("--masks-subdir", type=str, default="masks")
     parser.add_argument("--output", type=Path, default=None)
     return parser.parse_args()
 
@@ -79,13 +80,21 @@ def main() -> None:
 
     if args.model_type == "yolo":
         predictor = yolo_predictor(args.weights, args.imgsz, args.threshold, args.device)
+        labels_dir = args.data_root / "labels/val"
+        ground_truth_source = "txt"
+        masks_dir = None
     else:
         predictor = unet_predictor(args.weights, args.image_size, args.threshold, args.device)
+        labels_dir = None
+        ground_truth_source = "png"
+        masks_dir = args.data_root / args.masks_subdir / "val"
 
     metrics = evaluate_split(
         images_dir=args.data_root / "images/val",
-        labels_dir=args.data_root / "labels/val",
+        labels_dir=labels_dir,
         predictor=predictor,
+        ground_truth_source=ground_truth_source,
+        masks_dir=masks_dir,
         verbose=True,
     )
 

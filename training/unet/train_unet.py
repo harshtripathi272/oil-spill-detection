@@ -10,7 +10,6 @@ import torch
 import torch.nn.functional as F
 import wandb
 from torch import nn
-from torch.cuda.amp import GradScaler, autocast
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -27,6 +26,8 @@ from training.unet.model import build_unet
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train UNet segmentation with W&B logging.")
     parser.add_argument("--data-root", type=Path, default=ROOT / "datasets")
+    parser.add_argument("--mask-source", type=str, choices=["auto", "png", "txt"], default="auto")
+    parser.add_argument("--masks-subdir", type=str, default="masks")
     parser.add_argument("--encoder", type=str, default="efficientnet-b0")
     parser.add_argument("--epochs", type=int, default=40)
     parser.add_argument("--image-size", type=int, default=512)
@@ -58,20 +59,22 @@ def train_one_epoch(
     model: nn.Module,
     loader: DataLoader,
     optimizer: torch.optim.Optimizer,
-    scaler: GradScaler,
+    scaler,
     device: torch.device,
     dice_weight: float,
+    epoch: int,
+    total_epochs: int,
 ) -> float:
     model.train()
     total_loss = 0.0
 
-    pbar = tqdm(loader, desc="UNet Train", unit="batch")
+    pbar = tqdm(loader, desc=f"UNet Train [Epoch {epoch}/{total_epochs}]", unit="batch")
     for images, masks in pbar:
         images = images.to(device, non_blocking=True)
         masks = masks.to(device, non_blocking=True)
 
         optimizer.zero_grad(set_to_none=True)
-        with autocast(enabled=device.type == "cuda"):
+        with _amp_autocast(device):
             logits = model(images)
             bce = F.binary_cross_entropy_with_logits(logits, masks)
             dloss = dice_loss(logits, masks)
@@ -87,6 +90,22 @@ def train_one_epoch(
     return total_loss / max(1, len(loader))
 
 
+def _amp_autocast(device: torch.device):
+    enabled = device.type == "cuda"
+    try:
+        return torch.amp.autocast(device_type=device.type, enabled=enabled)
+    except TypeError:
+        return torch.amp.autocast(device.type, enabled=enabled)
+
+
+def _build_grad_scaler(device: torch.device):
+    enabled = device.type == "cuda"
+    try:
+        return torch.amp.GradScaler(device_type=device.type, enabled=enabled)
+    except TypeError:
+        return torch.amp.GradScaler(device.type, enabled=enabled)
+
+
 def _unet_predictor(model: nn.Module, image_size: int, device: torch.device, threshold: float):
     def _predict(image_path: Path, orig_shape: tuple[int, int]) -> np.ndarray:
         import cv2
@@ -99,7 +118,7 @@ def _unet_predictor(model: nn.Module, image_size: int, device: torch.device, thr
         tensor = tensor.to(device)
 
         model.eval()
-        with torch.no_grad(), autocast(enabled=device.type == "cuda"):
+        with torch.no_grad(), _amp_autocast(device):
             logits = model(tensor)
             probs = torch.sigmoid(logits)[0, 0].detach().cpu().numpy()
 
@@ -115,15 +134,24 @@ def _unet_predictor(model: nn.Module, image_size: int, device: torch.device, thr
 def validate(
     model: nn.Module,
     data_root: Path,
+    masks_subdir: str,
     image_size: int,
     device: torch.device,
     threshold: float,
+    epoch: int | None = None,
+    total_epochs: int | None = None,
 ) -> dict[str, float]:
     predictor = _unet_predictor(model, image_size=image_size, device=device, threshold=threshold)
+    progress_desc = None
+    if epoch is not None and total_epochs is not None:
+        progress_desc = f"UNet Val [Epoch {epoch}/{total_epochs}]"
     return evaluate_split(
         images_dir=data_root / "images/val",
-        labels_dir=data_root / "labels/val",
+        labels_dir=None,
         predictor=predictor,
+        ground_truth_source="png",
+        masks_dir=data_root / masks_subdir / "val",
+        progress_desc=progress_desc,
         verbose=True,
     )
 
@@ -151,6 +179,8 @@ def run_training(config: dict[str, object]) -> dict[str, float]:
         root_dir=Path(config["data_root"]),
         split="train",
         image_size=int(config["image_size"]),
+        mask_source=str(config.get("mask_source", "auto")),
+        masks_subdir=str(config.get("masks_subdir", "masks")),
     )
     train_loader = DataLoader(
         train_ds,
@@ -168,7 +198,7 @@ def run_training(config: dict[str, object]) -> dict[str, float]:
         lr=float(config["lr"]),
         weight_decay=float(config["weight_decay"]),
     )
-    scaler = GradScaler(enabled=device.type == "cuda")
+    scaler = _build_grad_scaler(device)
 
     best_dice = -1.0
     output_dir = Path(config["output_dir"]) / str(config["run_name"])
@@ -183,14 +213,19 @@ def run_training(config: dict[str, object]) -> dict[str, float]:
             scaler=scaler,
             device=device,
             dice_weight=float(config["dice_weight"]),
+            epoch=epoch,
+            total_epochs=int(config["epochs"]),
         )
 
         val_metrics = validate(
             model=model,
             data_root=Path(config["data_root"]),
+            masks_subdir=str(config.get("masks_subdir", "masks")),
             image_size=int(config["image_size"]),
             device=device,
             threshold=float(config["threshold"]),
+            epoch=epoch,
+            total_epochs=int(config["epochs"]),
         )
 
         log_dict = {"epoch": epoch, "train/loss": train_loss}
@@ -216,6 +251,7 @@ def run_training(config: dict[str, object]) -> dict[str, float]:
     final_metrics = validate(
         model=model,
         data_root=Path(config["data_root"]),
+        masks_subdir=str(config.get("masks_subdir", "masks")),
         image_size=int(config["image_size"]),
         device=device,
         threshold=float(config["threshold"]),
@@ -230,6 +266,8 @@ def main() -> None:
     args = parse_args()
     config = {
         "data_root": args.data_root,
+        "mask_source": args.mask_source,
+        "masks_subdir": args.masks_subdir,
         "encoder": args.encoder,
         "epochs": args.epochs,
         "image_size": args.image_size,
