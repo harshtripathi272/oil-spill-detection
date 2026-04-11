@@ -2,6 +2,7 @@ websockets
 asyncio
 python-dotenv
 kafka-python
+redis
 pandas
 polars
 apache-airflow
