@@ -7,18 +7,17 @@ classification results and confidence scores.
 """
 
 from airflow.models import BaseOperator
-from airflow.utils.decorators import apply_defaults
 import json
 import logging
 import os
 import subprocess
+
 
 class SARInferenceOperator(BaseOperator):
     """
     Operator to run oil spill detection inference on a SAR image.
     """
 
-    @apply_defaults
     def __init__(
         self,
         model_path: str = "/models/oil_spill_v1.pt",

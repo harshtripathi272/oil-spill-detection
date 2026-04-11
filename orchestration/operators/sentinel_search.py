@@ -8,7 +8,6 @@ It outputs metadata required for subsequent download and processing steps.
 
 from airflow.models import BaseOperator
 from airflow.exceptions import AirflowException
-from airflow.utils.decorators import apply_defaults
 import logging
 
 import asf_search as asf
@@ -22,7 +21,6 @@ class SentinelSearchOperator(BaseOperator):
 
     template_fields = ("roi_wkt", "search_start", "search_end")
 
-    @apply_defaults
     def __init__(
         self,
         roi_wkt: str,

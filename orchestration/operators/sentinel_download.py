@@ -8,7 +8,6 @@ It ensures the raw data is available locally or in an object store for inference
 
 from airflow.models import BaseOperator
 from airflow.exceptions import AirflowException
-from airflow.utils.decorators import apply_defaults
 import logging
 import os
 
@@ -21,7 +20,6 @@ class SentinelDownloadOperator(BaseOperator):
     Expects product metadata from XCom (upstream task).
     """
 
-    @apply_defaults
     def __init__(
         self,
         download_dir: str = "/tmp/sentinel_data",

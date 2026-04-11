@@ -8,7 +8,6 @@ Sentinel-1 imagery, running the oil spill detection model, and updating the inci
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from airflow.utils.dates import days_ago
 from datetime import datetime, timedelta, timezone
 from orchestration.utils.state_store import StateStore, STATE_PROCESSING, STATE_VERIFIED, STATE_FAILED
 from orchestration.utils.geometry import create_buffer_bbox, wkt_from_bbox
@@ -101,8 +100,8 @@ with DAG(
     'suspicious_event_validation',
     default_args=default_args,
     description='Validates suspicious AIS events using Sentinel-1 imagery',
-    schedule_interval=None, # Triggered externally
-    start_date=days_ago(1),
+    schedule=None, # Triggered externally
+    start_date=datetime.now(timezone.utc) - timedelta(days=1),
     tags=['event_driven', 'ais', 'oil_spill'],
 ) as dag:
 

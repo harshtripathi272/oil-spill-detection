@@ -8,7 +8,6 @@ to avoid unnecessary API calls and ensure timely data processing.
 
 from airflow.sensors.base import BaseSensorOperator
 from airflow.exceptions import AirflowException
-from airflow.utils.decorators import apply_defaults
 import logging
 import os
 
@@ -26,7 +25,6 @@ class SentinelAvailabilitySensor(BaseSensorOperator):
 
     template_fields = ("date_range",)
 
-    @apply_defaults
     def __init__(
         self,
         roi_bbox: list,

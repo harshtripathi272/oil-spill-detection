@@ -11,3 +11,6 @@ __pycache__/
 logs/
 .ipynb_checkpoints/
 runs/
+
+.airflow/
+airflow.log

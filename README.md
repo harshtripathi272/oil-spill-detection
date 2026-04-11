@@ -67,6 +67,12 @@ Required environment variables:
 - `COPERNICUS_PASSWORD`: Copernicus/ESA password
 - `SAR_INFERENCE_CMD`: command template used by `SARInferenceOperator`
 
+Local Airflow notes:
+
+- Set `AIRFLOW__CORE__DAGS_FOLDER=$PWD/orchestration/dags` before running `airflow standalone` so Airflow scans this repo's DAGs.
+- Set `AIRFLOW__CORE__LOAD_EXAMPLES=False` before initializing a new Airflow metadata DB.
+- If you already started Airflow once and see the default example DAGs, reset the local metadata DB or delete `.airflow/airflow.db` before starting again.
+
 `SAR_INFERENCE_CMD` placeholders:
 
 - `{input}`: path to downloaded Sentinel product file
