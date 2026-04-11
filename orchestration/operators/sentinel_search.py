@@ -20,27 +20,27 @@ class SentinelSearchOperator(BaseOperator):
     Pushes the list of found product IDs/metadata to XCom.
     """
 
-    template_fields = ("roi_wkt", "start_date", "end_date")
+    template_fields = ("roi_wkt", "search_start", "search_end")
 
     @apply_defaults
     def __init__(
         self,
         roi_wkt: str,
-        start_date: str,
-        end_date: str,
+        search_start: str,
+        search_end: str,
         *args,
         **kwargs
     ):
         super().__init__(*args, **kwargs)
         self.roi_wkt = roi_wkt
-        self.start_date = start_date
-        self.end_date = end_date
+        self.search_start = search_start
+        self.search_end = search_end
 
     def execute(self, context):
-        logging.info(f"Searching Sentinel-1 products for ROI: {self.roi_wkt} from {self.start_date} to {self.end_date}")
+        logging.info(f"Searching Sentinel-1 products for ROI: {self.roi_wkt} from {self.search_start} to {self.search_end}")
 
-        if not self.roi_wkt or not self.start_date or not self.end_date:
-            raise AirflowException("roi_wkt, start_date, and end_date are required for Sentinel search.")
+        if not self.roi_wkt or not self.search_start or not self.search_end:
+            raise AirflowException("roi_wkt, search_start, and search_end are required for Sentinel search.")
 
         try:
             found_products = self._search_products()
@@ -60,8 +60,8 @@ class SentinelSearchOperator(BaseOperator):
             "platform": "SENTINEL-1",
             "processingLevel": "GRD",
             "intersectsWith": self.roi_wkt,
-            "start": self.start_date,
-            "end": self.end_date,
+            "start": self.search_start,
+            "end": self.search_end,
         }
         logging.debug("ASF search query parameters: %s", query_kwargs)
 

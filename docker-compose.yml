@@ -6,6 +6,8 @@ x-airflow-common:
     context: .
     dockerfile: docker/airflow/Dockerfile
   image: ${AIRFLOW_IMAGE_NAME:-oilspill-airflow:2.8.0-custom}
+  env_file:
+    - ./.env
   environment:
     &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: CeleryExecutor
@@ -140,8 +142,8 @@ services:
           echo "  echo 'AIRFLOW_UID=1000' >> .env"
           echo
         fi
-        mkdir -p /sources/logs /sources/dags /sources/plugins
-        chown -R "${AIRFLOW_UID}:0" /sources/{logs,dags,plugins}
+        mkdir -p /sources/logs /sources/dags /sources/plugins /sources/orchestration
+        chown -R "${AIRFLOW_UID}:0" /sources/{logs,dags,plugins,orchestration}
         exec /entrypoint airflow version
     # yamllint enable rule:line-length
     environment:
@@ -155,6 +157,7 @@ services:
       - ./orchestration/dags:/sources/dags
       - ./orchestration/logs:/sources/logs
       - ./orchestration/plugins:/sources/plugins
+      - ./orchestration:/sources/orchestration
 
 volumes:
   postgres-db-volume:

@@ -121,8 +121,8 @@ with DAG(
     search_sentinel = SentinelSearchOperator(
         task_id='search_sentinel',
         roi_wkt="{{ ti.xcom_pull(task_ids='prepare_search_params', key='return_value')['roi_wkt'] }}",
-        start_date="{{ ti.xcom_pull(task_ids='prepare_search_params', key='return_value')['start_date'] }}",
-        end_date="{{ ti.xcom_pull(task_ids='prepare_search_params', key='return_value')['end_date'] }}",
+        search_start="{{ ti.xcom_pull(task_ids='prepare_search_params', key='return_value')['start_date'] }}",
+        search_end="{{ ti.xcom_pull(task_ids='prepare_search_params', key='return_value')['end_date'] }}",
     )
 
     download_sentinel = SentinelDownloadOperator(

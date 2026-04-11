@@ -12,7 +12,7 @@ from airflow.utils.decorators import apply_defaults
 import logging
 import os
 
-from sentinelsat import SentinelAPI
+import asf_search as asf
 
 class SentinelAvailabilitySensor(BaseSensorOperator):
     """
@@ -48,15 +48,26 @@ class SentinelAvailabilitySensor(BaseSensorOperator):
         """
         logging.info(f"Checking {self.platform_name} availability for ROI: {self.roi_bbox}")
 
-        username = os.getenv("COPERNICUS_USER")
-        password = os.getenv("COPERNICUS_PASSWORD")
-        if not username or not password:
-            raise ValueError(
-                "Missing Copernicus credentials. Set COPERNICUS_USER and COPERNICUS_PASSWORD environment variables."
-            )
-
         if not self.date_range or len(self.date_range) != 2:
             raise AirflowException("date_range must be a tuple/list with (start_date, end_date).")
+
+        username = os.getenv("EARTHDATA_USERNAME")
+        password = os.getenv("EARTHDATA_PASSWORD")
+        logging.debug(f"EARTHDATA_USERNAME set: {bool(username)}, EARTHDATA_PASSWORD set: {bool(password)}")
+        # asf_search search endpoints do not take a session parameter in this version.
+        # We still validate credentials when present so auth issues surface early.
+        if username or password:
+            if not username or not password:
+                raise AirflowException(
+                    "EARTHDATA credentials are partially configured. Set both EARTHDATA_USERNAME and EARTHDATA_PASSWORD."
+                )
+            try:
+                asf.ASFSession().auth_with_creds(username, password)
+                logging.info("Earthdata credentials detected and validated for ASF access.")
+            except Exception as exc:
+                raise AirflowException(f"Earthdata authentication failed: {exc}") from exc
+        else:
+            logging.info("EARTHDATA credentials not set; running ASF metadata search anonymously.")
 
         start_date, end_date = self.date_range
         if not start_date or not end_date:
@@ -65,27 +76,24 @@ class SentinelAvailabilitySensor(BaseSensorOperator):
         area_wkt = self._bbox_to_wkt(self.roi_bbox)
 
         try:
-            api = SentinelAPI(
-                user=username,
-                password=password,
-                api_url="https://apihub.copernicus.eu/apihub",
-            )
-
-            products = api.query(
-                area=area_wkt,
-                date=(start_date, end_date),
-                platformname=self.platform_name,
-                producttype="GRD",
-                sensoroperationalmode="IW",
-            )
+            query_kwargs = {
+                "platform": "SENTINEL-1",
+                "processingLevel": "GRD",
+                "intersectsWith": area_wkt,
+                "start": start_date,
+                "end": end_date,
+            }
+            logging.debug("ASF availability query parameters: %s", query_kwargs)
+            products = asf.search(**query_kwargs)
+            product_list = list(products) if products is not None else []
         except Exception as exc:
-            logging.warning(f"Sentinel availability check failed; will retry on next poke: {exc}")
+            logging.warning(f"ASF availability check failed; will retry on next poke: {exc}")
             return False
 
-        data_found = len(products) > 0
-        
+        data_found = len(product_list) > 0
+
         if data_found:
-            logging.info("New Sentinel-1 data found.")
+            logging.info("New Sentinel-1 data found via ASF.")
             return True
         else:
             logging.info("No data available yet.")
@@ -100,4 +108,4 @@ class SentinelAvailabilitySensor(BaseSensorOperator):
         return (
             f"POLYGON(({min_lon} {min_lat}, {min_lon} {max_lat}, "
             f"{max_lon} {max_lat}, {max_lon} {min_lat}, {min_lon} {min_lat}))"
-        )
+            )
