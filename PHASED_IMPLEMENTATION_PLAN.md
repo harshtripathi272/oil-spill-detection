@@ -29,7 +29,7 @@ Exit criteria:
 - Invalid records reach DLQ
 - Cleaned + feature topics receive valid events
 
-## Phase 2: Rule-Based Anomaly Detector
+## Phase 2: Model-Based Anomaly Detector
 
 Goal:
 
@@ -38,13 +38,17 @@ Goal:
 Scope:
 
 1. Consume `ais.features.vessel_tracks`
-2. Rule-based heuristics: loitering, dark activity, route deviation
+2. Model inference on vessel feature vectors (placeholder model for now)
 3. Publish `ais.anomalies.events` with score and anomaly metadata
 4. Add deterministic event IDs for idempotency
 
+Initial model placeholder:
+
+- `IsolationForest-Placeholder-v0`
+
 Exit criteria:
 
-- Synthetic test tracks generate expected anomaly events
+- Feature stream produces scored anomaly events above configured threshold
 
 ## Phase 3: SAR Trigger Bridge
 

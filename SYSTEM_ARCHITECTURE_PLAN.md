@@ -147,14 +147,15 @@ Consumes:
 
 - `ais.features.vessel_tracks`
 
-Phase 1 (rule-based):
+Phase 1 (model-based placeholder):
 
-1. Loitering:
-   - Speed `< loitering_speed_threshold_knots` for `>= loitering_duration_sec`
-2. Dark activity:
-   - Time gap between updates exceeds threshold
-3. Route deviation:
-   - Distance from expected lane/cluster exceeds threshold
+1. Run model inference on feature vectors from `ais.features.vessel_tracks`
+2. Emit anomalies when model score exceeds threshold
+3. Include model metadata in events
+
+Initial model placeholder name:
+
+- `IsolationForest-Placeholder-v0`
 
 Publishes:
 
@@ -170,13 +171,17 @@ Event schema:
   "lat": 0.0,
   "lon": 0.0,
   "timestamp": "2026-04-11T10:30:00Z",
-  "anomaly_type": "loitering | dark_activity | route_deviation",
+   "anomaly_type": "model_detected",
   "score": 0.0,
+   "model": {
+      "name": "IsolationForest-Placeholder-v0",
+      "label": "anomalous"
+   },
   "features": {}
 }
 ```
 
-Phase 2 (future):
+Phase 2 (future upgrades):
 
 - Isolation Forest
 - LSTM trajectory model
