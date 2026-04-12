@@ -1,11 +1,13 @@
 """
 Suspicious Event DAG.
 
-This event-driven DAG is triggered externally when a suspicious AIS event is detected.
+This event-driven DAG consumes suspicious trigger events from Kafka by default
+and can still run with manual dag_run.conf payloads for local testing.
 It orchestrates the validation workflow: creating a bounding box, checking and downloading 
 Sentinel-1 imagery, running the oil spill detection model, and updating the incident state.
 """
 
+import os
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from datetime import datetime, timedelta, timezone
@@ -14,6 +16,7 @@ from orchestration.utils.geometry import create_buffer_bbox, wkt_from_bbox
 from orchestration.operators.sentinel_search import SentinelSearchOperator
 from orchestration.operators.sentinel_download import SentinelDownloadOperator
 from orchestration.operators.sar_inference import SARInferenceOperator
+from orchestration.sensors.kafka_trigger_sensor import KafkaTriggerSensor
 
 # Default arguments
 default_args = {
@@ -25,9 +28,28 @@ default_args = {
     'retry_delay': timedelta(minutes=5),
 }
 
+KAFKA_BOOTSTRAP = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'localhost:29092')
+SAR_TRIGGER_TOPIC = os.getenv('SAR_TRIGGER_TOPIC', 'sar.trigger.events')
+SAR_TRIGGER_GROUP_ID = os.getenv('AIRFLOW_SAR_TRIGGER_GROUP_ID', 'airflow-sar-trigger-v1')
+SAR_TRIGGER_POLL_TIMEOUT_MS = int(os.getenv('AIRFLOW_SAR_TRIGGER_POLL_TIMEOUT_MS', '1000'))
+
+
+def _get_event_payload(context):
+    """Read payload from dag_run.conf (manual) or Kafka sensor XCom (default)."""
+    dag_run_conf = context['dag_run'].conf or {}
+    if isinstance(dag_run_conf, dict) and dag_run_conf.get('incident_id'):
+        return dag_run_conf
+
+    ti = context['ti']
+    sensor_payload = ti.xcom_pull(task_ids='wait_for_sar_trigger', key='return_value')
+    if isinstance(sensor_payload, dict):
+        return sensor_payload
+
+    raise ValueError('No valid trigger payload found in dag_run.conf or Kafka sensor XCom.')
+
 def initialize_incident(**context):
-    """Initializes the incident state directly from DAG run configuration."""
-    conf = context['dag_run'].conf
+    """Initializes incident state from Kafka-trigger payload or dag_run.conf."""
+    conf = _get_event_payload(context)
     incident_id = conf.get('incident_id')
     
     if not incident_id:
@@ -39,7 +61,7 @@ def initialize_incident(**context):
 
 def prepare_search_params(**context):
     """Calculates ROI and date range for satellite search."""
-    conf = context['dag_run'].conf
+    conf = _get_event_payload(context)
     lat = conf.get('lat')
     lon = conf.get('lon')
     event_time = conf.get('timestamp') # ISO string expected
@@ -79,7 +101,7 @@ def process_results(**context):
     """Updates state based on inference results."""
     ti = context['ti']
     results = ti.xcom_pull(task_ids='sar_inference')
-    conf = context['dag_run'].conf
+    conf = _get_event_payload(context)
     incident_id = conf.get('incident_id')
     
     store = StateStore()
@@ -100,10 +122,22 @@ with DAG(
     'suspicious_event_validation',
     default_args=default_args,
     description='Validates suspicious AIS events using Sentinel-1 imagery',
-    schedule=None, # Triggered externally
+    schedule='*/2 * * * *',
     start_date=datetime.now(timezone.utc) - timedelta(days=1),
+    catchup=False,
     tags=['event_driven', 'ais', 'oil_spill'],
 ) as dag:
+
+    wait_for_trigger = KafkaTriggerSensor(
+        task_id='wait_for_sar_trigger',
+        topic=SAR_TRIGGER_TOPIC,
+        bootstrap_servers=KAFKA_BOOTSTRAP,
+        group_id=SAR_TRIGGER_GROUP_ID,
+        poll_timeout_ms=SAR_TRIGGER_POLL_TIMEOUT_MS,
+        poke_interval=30,
+        timeout=60 * 30,
+        mode='reschedule',
+    )
 
     init_task = PythonOperator(
         task_id='initialize_incident',
@@ -139,4 +173,4 @@ with DAG(
         python_callable=process_results
     )
 
-    init_task >> prepare_params_task >> search_sentinel >> download_sentinel >> sar_inference >> finalize_task
+    wait_for_trigger >> init_task >> prepare_params_task >> search_sentinel >> download_sentinel >> sar_inference >> finalize_task
