@@ -44,6 +44,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wandb-project", type=str, default="oilspill")
     parser.add_argument("--wandb-entity", type=str, default=None)
     parser.add_argument("--save-json", type=Path, default=None)
+    parser.add_argument("--patience", type=int, default=10, help="Stop if Val Dice doesn't improve for N epochs.")
     return parser.parse_args()
 
 
@@ -53,6 +54,13 @@ def dice_loss(logits: torch.Tensor, targets: torch.Tensor, eps: float = 1e-6) ->
     union = probs.sum(dim=(2, 3)) + targets.sum(dim=(2, 3))
     dice = (2 * intersection + eps) / (union + eps)
     return 1.0 - dice.mean()
+
+
+def focal_loss(logits: torch.Tensor, targets: torch.Tensor, alpha: float = 0.25, gamma: float = 2.0) -> torch.Tensor:
+    bce = F.binary_cross_entropy_with_logits(logits, targets, reduction="none")
+    pt = torch.exp(-bce)
+    focal = alpha * (1 - pt) ** gamma * bce
+    return focal.mean()
 
 
 def train_one_epoch(
@@ -76,9 +84,9 @@ def train_one_epoch(
         optimizer.zero_grad(set_to_none=True)
         with _amp_autocast(device):
             logits = model(images)
-            bce = F.binary_cross_entropy_with_logits(logits, masks)
+            floss = focal_loss(logits, masks)
             dloss = dice_loss(logits, masks)
-            loss = (1.0 - dice_weight) * bce + dice_weight * dloss
+            loss = (1.0 - dice_weight) * floss + dice_weight * dloss
 
         scaler.scale(loss).backward()
         scaler.step(optimizer)
@@ -201,6 +209,9 @@ def run_training(config: dict[str, object]) -> dict[str, float]:
     scaler = _build_grad_scaler(device)
 
     best_dice = -1.0
+    epochs_no_improve = 0
+    patience = int(config.get("patience", 10))
+
     output_dir = Path(config["output_dir"]) / str(config["run_name"])
     output_dir.mkdir(parents=True, exist_ok=True)
     best_path = output_dir / "best_unet.pt"
@@ -234,6 +245,7 @@ def run_training(config: dict[str, object]) -> dict[str, float]:
 
         if val_metrics["dice"] > best_dice:
             best_dice = val_metrics["dice"]
+            epochs_no_improve = 0
             torch.save(
                 {
                     "model_state_dict": model.state_dict(),
@@ -243,6 +255,11 @@ def run_training(config: dict[str, object]) -> dict[str, float]:
                 },
                 best_path,
             )
+        else:
+            epochs_no_improve += 1
+            if epochs_no_improve >= patience:
+                print(f"Early stopping at epoch {epoch}")
+                break
 
     artifact = wandb.Artifact(name=f"{wandb_run.name}-best", type="model")
     artifact.add_file(str(best_path))
@@ -283,6 +300,7 @@ def main() -> None:
         "run_name": args.run_name,
         "wandb_project": args.wandb_project,
         "wandb_entity": args.wandb_entity,
+        "patience": args.patience,
     }
 
     metrics = run_training(config)

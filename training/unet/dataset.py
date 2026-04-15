@@ -62,6 +62,22 @@ class OilSpillSegmentationDataset(Dataset):
         else:
             mask = yolo_polygon_txt_to_mask(label_path=label_path, height=height, width=width)
 
+        if self.split == "train":
+            import albumentations as A
+            transform = A.Compose([
+                # Geometric augmentations (perfectly aligned with masks)
+                A.RandomRotate90(p=0.5),
+                A.HorizontalFlip(p=0.5),
+                A.VerticalFlip(p=0.5),
+                
+                # Photometric augmentations
+                A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.5),
+                A.HueSaturationValue(hue_shift_limit=10, sat_shift_limit=20, val_shift_limit=10, p=0.3),
+                A.GaussianBlur(blur_limit=(3, 5), p=0.2),
+            ])
+            aug = transform(image=image, mask=mask)
+            image, mask = aug["image"], aug["mask"]
+
         if self.image_size is not None:
             image = cv2.resize(image, (self.image_size, self.image_size), interpolation=cv2.INTER_AREA)
             mask = cv2.resize(mask, (self.image_size, self.image_size), interpolation=cv2.INTER_NEAREST)

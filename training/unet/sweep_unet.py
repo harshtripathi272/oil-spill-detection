@@ -23,7 +23,7 @@ def main() -> None:
         cfg.setdefault("epochs", 40)
         cfg.setdefault("image_size", 512)
         cfg.setdefault("batch_size", 4)
-        cfg.setdefault("num_workers", 4)
+        cfg.setdefault("num_workers", 0)
         cfg.setdefault("lr", 1e-3)
         cfg.setdefault("weight_decay", 1e-4)
         cfg.setdefault("dice_weight", 0.5)

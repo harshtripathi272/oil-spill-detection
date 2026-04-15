@@ -21,9 +21,15 @@ python training/unet/train_unet.py \
   --data-root datasets \
   --mask-source auto \
   --masks-subdir masks \
-  --encoder efficientnet-b0 \
+  --encoder mit_b3 \
   --epochs 50 \
   --image-size 512 \
-  --batch-size 4 \
+  --batch-size 8 \
+  --num-workers 0 \
+  --lr 0.00006492337024905077 \
+  --weight-decay 0.0008877539657121291 \
+  --dice-weight 0.7296254631882069 \
+  --threshold 0.5938725810266448 \
+  --seed 42 \
   --device cuda \
-  --run-name unet-efficientnetb0-baseline
+  --run-name unet-mit_b3-best
