@@ -4,7 +4,9 @@
    ================================================================ */
 
 /* === RESET & BASE === */
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
@@ -121,12 +123,14 @@ button {
   outline: none;
 }
 
-img, svg {
+img,
+svg {
   display: block;
   max-width: 100%;
 }
 
-ul, ol {
+ul,
+ol {
   list-style: none;
 }
 
@@ -209,13 +213,13 @@ ul, ol {
 }
 
 .glow-border {
-  box-shadow: 0 0 0 1px rgba(255, 123, 0, 0.15), 
-              0 0 12px rgba(255, 123, 0, 0.06);
+  box-shadow: 0 0 0 1px rgba(255, 123, 0, 0.15),
+    0 0 12px rgba(255, 123, 0, 0.06);
 }
 
 .glow-border-active {
-  box-shadow: 0 0 0 1px rgba(255, 123, 0, 0.3), 
-              0 0 20px rgba(255, 123, 0, 0.12);
+  box-shadow: 0 0 0 1px rgba(255, 123, 0, 0.3),
+    0 0 20px rgba(255, 123, 0, 0.12);
 }
 
 /* === BUTTON STYLES === */
@@ -236,7 +240,8 @@ ul, ol {
 
 .btn-primary {
   background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dim) 100%);
-  color: #000; /* Dark text for bright orange buttons */
+  color: #000;
+  /* Dark text for bright orange buttons */
   box-shadow: 0 0 16px rgba(255, 123, 0, 0.3);
 }
 
@@ -262,6 +267,7 @@ ul, ol {
     opacity: 0;
     transform: translateY(24px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -269,14 +275,22 @@ ul, ol {
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes pulseGlow {
-  0%, 100% {
+
+  0%,
+  100% {
     box-shadow: 0 0 0 0 rgba(255, 123, 0, 0.2);
   }
+
   50% {
     box-shadow: 0 0 0 8px rgba(255, 123, 0, 0);
   }
@@ -287,6 +301,7 @@ ul, ol {
     transform: scale(0.8);
     opacity: 0.8;
   }
+
   100% {
     transform: scale(2.5);
     opacity: 0;
@@ -304,6 +319,7 @@ ul, ol {
     opacity: 0;
     transform: translateX(-30px);
   }
+
   to {
     opacity: 1;
     transform: translateX(0);
@@ -315,6 +331,7 @@ ul, ol {
     opacity: 0;
     transform: translateX(30px);
   }
+
   to {
     opacity: 1;
     transform: translateX(0);
@@ -322,23 +339,49 @@ ul, ol {
 }
 
 @keyframes countUp {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes radarSweep {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes waveFloat {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-8px); }
+
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-8px);
+  }
 }
 
 @keyframes gridPulse {
-  0%, 100% { opacity: 0.03; }
-  50% { opacity: 0.08; }
+
+  0%,
+  100% {
+    opacity: 0.03;
+  }
+
+  50% {
+    opacity: 0.08;
+  }
 }
 
 .animate-fade-in-up {
@@ -381,23 +424,60 @@ ul, ol {
 
 /* === RESPONSIVE BREAKPOINTS === */
 @media (max-width: 1024px) {
-  .text-display { font-size: 3rem; }
-  .text-h1 { font-size: 2.5rem; }
-  .text-h2 { font-size: 1.875rem; }
-  .section { padding: var(--space-4xl) 0; }
+  .text-display {
+    font-size: 3rem;
+  }
+
+  .text-h1 {
+    font-size: 2.5rem;
+  }
+
+  .text-h2 {
+    font-size: 1.875rem;
+  }
+
+  .section {
+    padding: var(--space-4xl) 0;
+  }
 }
 
 @media (max-width: 768px) {
-  .text-display { font-size: 2.25rem; }
-  .text-h1 { font-size: 2rem; }
-  .text-h2 { font-size: 1.5rem; }
-  .text-h3 { font-size: 1.25rem; }
-  .container { padding: 0 var(--space-md); }
-  .section { padding: var(--space-3xl) 0; }
+  .text-display {
+    font-size: 2.25rem;
+  }
+
+  .text-h1 {
+    font-size: 2rem;
+  }
+
+  .text-h2 {
+    font-size: 1.5rem;
+  }
+
+  .text-h3 {
+    font-size: 1.25rem;
+  }
+
+  .container {
+    padding: 0 var(--space-md);
+  }
+
+  .section {
+    padding: var(--space-3xl) 0;
+  }
 }
 
 @media (max-width: 480px) {
-  .text-display { font-size: 1.875rem; }
-  .text-h1 { font-size: 1.625rem; }
-  .btn { padding: 10px 20px; font-size: 0.875rem; }
+  .text-display {
+    font-size: 1.875rem;
+  }
+
+  .text-h1 {
+    font-size: 1.625rem;
+  }
+
+  .btn {
+    padding: 10px 20px;
+    font-size: 0.875rem;
+  }
 }

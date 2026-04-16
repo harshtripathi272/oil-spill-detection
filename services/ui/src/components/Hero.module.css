@@ -6,7 +6,8 @@
   justify-content: center;
   overflow: hidden;
   padding-top: 80px;
-  background-image: linear-gradient(90deg, rgba(7, 6, 5, 0.98) 0%, rgba(7, 6, 5, 0.8) 45%, rgba(7, 6, 5, 0.1) 100%), 
+  background-image: linear-gradient(180deg, transparent 80%, var(--color-abyss) 100%),
+                    linear-gradient(90deg, rgba(7, 6, 5, 0.98) 0%, rgba(7, 6, 5, 0.8) 45%, rgba(7, 6, 5, 0.1) 100%), 
                     url(/tanker-bg.png);
   background-size: cover;
   background-position: center;

@@ -107,7 +107,7 @@ export default function Impact() {
         <div className={styles.quoteBlock}>
           <blockquote className={styles.quote}>
             "The ocean is not a dustbin. It is the planet's most critical life-support system.
-            Technology that accelerates spill detection by orders of magnitude is not an innovation 
+            Technology that accelerates spill detection by orders of magnitude is not an innovation
             — it is an obligation."
           </blockquote>
           <p className={styles.quoteAttrib}>

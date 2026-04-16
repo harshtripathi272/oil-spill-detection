@@ -11,7 +11,7 @@
   left: 0;
   right: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(0,212,255,0.08), transparent);
+  background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.08), transparent);
 }
 
 .grid {
@@ -122,9 +122,11 @@
     grid-template-columns: 1fr 1fr;
     gap: var(--space-xl);
   }
+
   .brand {
     grid-column: span 2;
   }
+
   .bottom {
     flex-direction: column;
     gap: var(--space-sm);
@@ -136,6 +138,7 @@
   .grid {
     grid-template-columns: 1fr;
   }
+
   .brand {
     grid-column: span 1;
   }

@@ -1,7 +1,8 @@
 .section {
   padding: var(--space-5xl) 0;
-  background: radial-gradient(circle at 50% 50%, rgba(255, 123, 0, 0.02), transparent 70%),
-              var(--color-surface-lowest);
+  background: 
+    radial-gradient(circle at 50% 50%, rgba(255, 123, 0, 0.02), transparent 70%),
+    linear-gradient(to bottom, transparent, var(--color-surface-lowest) 120px, var(--color-surface-lowest) calc(100% - 120px), transparent);
   position: relative;
   overflow: hidden;
 }
@@ -78,7 +79,7 @@
   inset: 0;
   border-radius: var(--radius-xl);
   padding: 2px;
-  background: linear-gradient(135deg, rgba(0,212,255,0.15), transparent 40%, transparent 60%, rgba(0,212,255,0.1));
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.15), transparent 40%, transparent 60%, rgba(0, 212, 255, 0.1));
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
@@ -106,7 +107,8 @@
   margin-bottom: var(--space-lg);
 }
 
-.sonarRing1, .sonarRing2 {
+.sonarRing1,
+.sonarRing2 {
   position: absolute;
   top: 50%;
   left: 50%;
@@ -191,14 +193,19 @@
   left: 0;
   right: 0;
   height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(0,212,255,0.5), transparent);
-  box-shadow: 0 0 20px rgba(0,212,255,0.3);
+  background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.5), transparent);
+  box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
   animation: scanDown 2s linear infinite;
 }
 
 @keyframes scanDown {
-  from { top: -2px; }
-  to { top: 100%; }
+  from {
+    top: -2px;
+  }
+
+  to {
+    top: 100%;
+  }
 }
 
 .detectionOverlay {
@@ -332,7 +339,9 @@
 }
 
 @keyframes fillRing {
-  from { stroke-dasharray: 0 327; }
+  from {
+    stroke-dasharray: 0 327;
+  }
 }
 
 .ringValue {
@@ -426,10 +435,14 @@
 
 /* Responsive */
 @media (max-width: 768px) {
-  .title { font-size: 2rem; }
+  .title {
+    font-size: 2rem;
+  }
+
   .previewArea {
     grid-template-columns: 1fr;
   }
+
   .dropZone {
     padding: var(--space-3xl) var(--space-md);
   }

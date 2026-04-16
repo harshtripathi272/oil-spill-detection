@@ -71,8 +71,8 @@ export default function Upload() {
               />
               <div className={styles.dropIcon}>
                 <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M4 14.899A7 7 0 1115.71 8h1.79a4.5 4.5 0 012.5 8.242"/>
-                  <path d="M12 12v9"/><path d="M8 17l4-4 4 4"/>
+                  <path d="M4 14.899A7 7 0 1115.71 8h1.79a4.5 4.5 0 012.5 8.242" />
+                  <path d="M12 12v9" /><path d="M8 17l4-4 4 4" />
                 </svg>
                 {/* Sonar rings */}
                 <div className={styles.sonarRing1} />
@@ -102,8 +102,8 @@ export default function Upload() {
                   {result && result.prediction === 'oil_spill' && (
                     <div className={styles.detectionOverlay}>
                       <svg className={styles.detectionSvg} viewBox="0 0 100 100" preserveAspectRatio="none">
-                        <ellipse cx="62" cy="45" rx="22" ry="14" fill="rgba(220,38,38,0.2)" stroke="rgba(220,38,38,0.6)" strokeWidth="0.8" strokeDasharray="3 2" transform="rotate(25 62 45)"/>
-                        <ellipse cx="58" cy="52" rx="15" ry="8" fill="rgba(220,38,38,0.15)" stroke="rgba(220,38,38,0.4)" strokeWidth="0.5" transform="rotate(15 58 52)"/>
+                        <ellipse cx="62" cy="45" rx="22" ry="14" fill="rgba(220,38,38,0.2)" stroke="rgba(220,38,38,0.6)" strokeWidth="0.8" strokeDasharray="3 2" transform="rotate(25 62 45)" />
+                        <ellipse cx="58" cy="52" rx="15" ry="8" fill="rgba(220,38,38,0.15)" stroke="rgba(220,38,38,0.4)" strokeWidth="0.5" transform="rotate(15 58 52)" />
                       </svg>
                     </div>
                   )}
@@ -122,9 +122,9 @@ export default function Upload() {
                     <div className={styles.radarWrap}>
                       <div className={styles.radarPulse} />
                       <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="12" cy="12" r="10" opacity="0.2"/>
-                        <circle cx="12" cy="12" r="6" opacity="0.4"/>
-                        <circle cx="12" cy="12" r="2" fill="var(--color-primary)"/>
+                        <circle cx="12" cy="12" r="10" opacity="0.2" />
+                        <circle cx="12" cy="12" r="6" opacity="0.4" />
+                        <circle cx="12" cy="12" r="2" fill="var(--color-primary)" />
                       </svg>
                     </div>
                     <h3 className={styles.processTitle}>Analyzing SAR Imagery</h3>
@@ -145,15 +145,15 @@ export default function Upload() {
                   <div className={styles.resultState}>
                     <div className={`${styles.resultBadge} ${styles.spill}`}>
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-                        <line x1="12" y1="9" x2="12" y2="13"/>
-                        <line x1="12" y1="17" x2="12.01" y2="17"/>
+                        <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                        <line x1="12" y1="9" x2="12" y2="13" />
+                        <line x1="12" y1="17" x2="12.01" y2="17" />
                       </svg>
                       OIL SPILL DETECTED
                     </div>
                     <div className={styles.confidenceRing}>
                       <svg viewBox="0 0 120 120" className={styles.ringChart}>
-                        <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(255,123,0,0.1)" strokeWidth="8"/>
+                        <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(255,123,0,0.1)" strokeWidth="8" />
                         <circle
                           cx="60" cy="60" r="52"
                           fill="none" stroke="var(--color-primary)"
@@ -198,7 +198,7 @@ export default function Upload() {
                     </p>
                     <button className="btn btn-primary" onClick={handleAnalyze}>
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+                        <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
                       </svg>
                       Run Detection
                     </button>
@@ -214,7 +214,7 @@ export default function Upload() {
           {upload.error && (
             <div className={styles.errorBar}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
               </svg>
               {upload.error}
             </div>

@@ -15,13 +15,6 @@ export default function Hero() {
         </svg>
       </div>
 
-      {/* Sonar pulse rings */}
-      <div className={styles.sonarContainer}>
-        <div className={styles.sonarRing} style={{ animationDelay: '0s' }} />
-        <div className={styles.sonarRing} style={{ animationDelay: '1.5s' }} />
-        <div className={styles.sonarRing} style={{ animationDelay: '3s' }} />
-      </div>
-
       <div className={`container ${styles.content}`}>
         <div className={styles.textBlock}>
           <p className={styles.eyebrow}>Maritime Intelligence Platform</p>
