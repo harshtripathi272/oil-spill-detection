@@ -47,7 +47,7 @@ export default function Results() {
   return (
     <section className={styles.section} ref={ref as React.RefObject<HTMLElement>}>
       <RadarScanner opacity={0.03} scale={1.2} />
-      <div className="container">
+      <div className="container" style={{ position: 'relative', zIndex: 10 }}>
         <div className={styles.header}>
           <p className={styles.eyebrow}>Detection History</p>
           <h2 className={styles.title}>Recent Analysis Results</h2>
@@ -111,7 +111,11 @@ export default function Results() {
           <span className={styles.footerText}>
             Showing 3 of 152 events
           </span>
-          <button className="btn btn-outline" style={{ padding: '8px 20px', fontSize: '0.8125rem' }}>
+          <button 
+            className="btn btn-outline" 
+            style={{ padding: '8px 20px', fontSize: '0.8125rem' }}
+            onClick={() => alert('Global Event Log module is coming soon!')}
+          >
             View All Events
           </button>
         </div>

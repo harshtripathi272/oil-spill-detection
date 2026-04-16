@@ -48,7 +48,7 @@ export default function Impact() {
       <div className={styles.oceanBg} />
       <RadarScanner opacity={0.04} scale={1.8} />
 
-      <div className={`container ${styles.content}`}>
+      <div className={`container ${styles.content}`} style={{ position: 'relative', zIndex: 10 }}>
         <div className={styles.header}>
           <p className={styles.eyebrow}>Environmental Impact</p>
           <h2 className={styles.title}>

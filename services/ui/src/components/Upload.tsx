@@ -39,7 +39,7 @@ export default function Upload() {
       ref={ref as React.RefObject<HTMLElement>}
     >
       <RadarScanner opacity={0.02} scale={1.5} />
-      <div className="container">
+      <div className="container" style={{ position: 'relative', zIndex: 10 }}>
         <div className={styles.header}>
           <p className={styles.eyebrow}>SAR Image Analysis</p>
           <h2 className={styles.title}>Upload & Detect</h2>
