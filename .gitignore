@@ -203,3 +203,4 @@ airflow.log
 /services/ui/stats.html
 
 stitch-skillsdatasets_sliced/
+/datasets_sliced/
