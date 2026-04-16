@@ -1,7 +1,20 @@
 .section {
   padding: var(--space-5xl) 0;
-  background: var(--color-surface-lowest);
+  background: radial-gradient(circle at 80% 20%, rgba(13, 40, 49, 0.15), transparent 40%),
+              radial-gradient(circle at 20% 80%, rgba(36, 30, 26, 0.3), transparent 60%),
+              var(--color-surface-lowest);
   position: relative;
+  overflow: hidden;
+}
+
+.section::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg width='800' height='800' viewBox='0 0 800 800' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='rgba(255, 123, 0, 0.015)' stroke-width='1'%3E%3Cpath d='M100 100c30-10 80 10 120 0s60-40 120-40 120 20 120 20M50 300c60 30 120-30 180 0s120 90 240 30M0 500c90 10 150-60 240-60s180 90 240 30M150 750c60-20 150 30 210-10s120-60 180-60'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 1000px auto;
+  pointer-events: none;
+  opacity: 0.8;
 }
 
 .section::before {

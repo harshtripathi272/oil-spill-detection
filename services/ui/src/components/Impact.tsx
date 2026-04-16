@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { useIntersectionObserver } from '../hooks/useIntersectionObserver'
+import RadarScanner from './RadarScanner'
 import styles from './Impact.module.css'
 
 function AnimatedCounter({ target, suffix = '', prefix = '' }: { target: number; suffix?: string; prefix?: string }) {
@@ -45,6 +46,7 @@ export default function Impact() {
     >
       {/* Ocean gradient overlay */}
       <div className={styles.oceanBg} />
+      <RadarScanner opacity={0.04} scale={1.8} />
 
       <div className={`container ${styles.content}`}>
         <div className={styles.header}>

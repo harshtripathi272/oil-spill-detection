@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useFileUpload } from '../hooks/useFileUpload'
 import { useIntersectionObserver } from '../hooks/useIntersectionObserver'
+import RadarScanner from './RadarScanner'
 import styles from './Upload.module.css'
 
 export default function Upload() {
@@ -37,6 +38,7 @@ export default function Upload() {
       id="detection"
       ref={ref as React.RefObject<HTMLElement>}
     >
+      <RadarScanner opacity={0.02} scale={1.5} />
       <div className="container">
         <div className={styles.header}>
           <p className={styles.eyebrow}>SAR Image Analysis</p>
@@ -151,7 +153,7 @@ export default function Upload() {
                     </div>
                     <div className={styles.confidenceRing}>
                       <svg viewBox="0 0 120 120" className={styles.ringChart}>
-                        <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(0,212,255,0.1)" strokeWidth="8"/>
+                        <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(255,123,0,0.1)" strokeWidth="8"/>
                         <circle
                           cx="60" cy="60" r="52"
                           fill="none" stroke="var(--color-primary)"

@@ -1,4 +1,5 @@
 import { useIntersectionObserver } from '../hooks/useIntersectionObserver'
+import RadarScanner from './RadarScanner'
 import styles from './Results.module.css'
 
 const mockResults = [
@@ -45,6 +46,7 @@ export default function Results() {
 
   return (
     <section className={styles.section} ref={ref as React.RefObject<HTMLElement>}>
+      <RadarScanner opacity={0.03} scale={1.2} />
       <div className="container">
         <div className={styles.header}>
           <p className={styles.eyebrow}>Detection History</p>
