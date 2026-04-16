@@ -1,0 +1,383 @@
+/* ================================================================
+   VesselWatch — "Abyssal Command" Design System
+   A cinematic maritime intelligence interface
+   ================================================================ */
+
+/* === RESET & BASE === */
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  /* ── Toxic Crude Hierarchy ── */
+  --color-abyss: #070605;
+  --color-surface-lowest: #0c0a08;
+  --color-surface: #14110e;
+  --color-surface-low: #1c1815;
+  --color-surface-container: #241e1a;
+  --color-surface-high: #2c2520;
+  --color-surface-highest: #382e28;
+
+  /* ── Accent Palette ── */
+  --color-primary: #FF7B00;
+  --color-primary-soft: #ffad5c;
+  --color-primary-dim: #cc6200;
+  --color-secondary: #0D2831;
+  --color-deep-teal: #081B22;
+
+  /* ── Semantic Colors ── */
+  --color-alert-amber: #ff4500;
+  --color-oil-crimson: #ff0000;
+  --color-success: #16a34a;
+  --color-outline: #38312b;
+
+  /* ── Text ── */
+  --color-text-primary: #F3ECE7;
+  --color-text-secondary: #A89B90;
+  --color-text-muted: #756A61;
+
+  /* ── Typography ── */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* ── Spacing ── */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+  --space-3xl: 64px;
+  --space-4xl: 96px;
+  --space-5xl: 128px;
+
+  /* ── Radii ── */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 9999px;
+
+  /* ── Transitions ── */
+  --transition-fast: 150ms ease;
+  --transition-base: 250ms ease;
+  --transition-slow: 400ms ease;
+  --transition-spring: 500ms cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ── Z-Index ── */
+  --z-base: 1;
+  --z-dropdown: 10;
+  --z-sticky: 50;
+  --z-navbar: 100;
+  --z-modal: 200;
+}
+
+html {
+  font-size: 16px;
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-abyss);
+  color: var(--color-text-primary);
+  line-height: 1.6;
+  overflow-x: hidden;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  outline: none;
+}
+
+img, svg {
+  display: block;
+  max-width: 100%;
+}
+
+ul, ol {
+  list-style: none;
+}
+
+/* === TYPOGRAPHY SCALE === */
+.text-display {
+  font-size: 4rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+}
+
+.text-h1 {
+  font-size: 3rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+
+.text-h2 {
+  font-size: 2.25rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.text-h3 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.text-body {
+  font-size: 1.125rem;
+  font-weight: 400;
+  line-height: 1.7;
+}
+
+.text-body-sm {
+  font-size: 0.9375rem;
+  font-weight: 400;
+  line-height: 1.6;
+}
+
+.text-caption {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.text-mono {
+  font-family: var(--font-mono);
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+/* === UTILITY CLASSES === */
+.container {
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 var(--space-lg);
+}
+
+.section {
+  padding: var(--space-5xl) 0;
+  position: relative;
+}
+
+.text-gradient {
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-soft) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.text-glow {
+  text-shadow: 0 0 20px rgba(255, 123, 0, 0.4), 0 0 40px rgba(255, 123, 0, 0.15);
+}
+
+.glow-border {
+  box-shadow: 0 0 0 1px rgba(255, 123, 0, 0.15), 
+              0 0 12px rgba(255, 123, 0, 0.06);
+}
+
+.glow-border-active {
+  box-shadow: 0 0 0 1px rgba(255, 123, 0, 0.3), 
+              0 0 20px rgba(255, 123, 0, 0.12);
+}
+
+/* === BUTTON STYLES === */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  padding: 12px 28px;
+  border-radius: var(--radius-md);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  transition: all var(--transition-base);
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dim) 100%);
+  color: #000; /* Dark text for bright orange buttons */
+  box-shadow: 0 0 16px rgba(255, 123, 0, 0.3);
+}
+
+.btn-primary:hover {
+  box-shadow: 0 0 24px rgba(255, 123, 0, 0.5);
+  transform: translateY(-1px);
+}
+
+.btn-outline {
+  background: transparent;
+  color: var(--color-primary-soft);
+  border: 1px solid rgba(255, 123, 0, 0.3);
+}
+
+.btn-outline:hover {
+  background: rgba(255, 123, 0, 0.06);
+  border-color: rgba(255, 123, 0, 0.5);
+}
+
+/* === ANIMATIONS === */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(255, 123, 0, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(255, 123, 0, 0);
+  }
+}
+
+@keyframes sonarPulse {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(2.5);
+    opacity: 0;
+  }
+}
+
+@keyframes dashFlow {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes countUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes radarSweep {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes waveFloat {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-8px); }
+}
+
+@keyframes gridPulse {
+  0%, 100% { opacity: 0.03; }
+  50% { opacity: 0.08; }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.6s ease forwards;
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.4s ease forwards;
+}
+
+/* Intersection Observer driven */
+.reveal {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: opacity 0.7s ease, transform 0.7s ease;
+}
+
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* === SCROLLBAR === */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-abyss);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-surface-high);
+  border-radius: var(--radius-pill);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-outline);
+}
+
+/* === RESPONSIVE BREAKPOINTS === */
+@media (max-width: 1024px) {
+  .text-display { font-size: 3rem; }
+  .text-h1 { font-size: 2.5rem; }
+  .text-h2 { font-size: 1.875rem; }
+  .section { padding: var(--space-4xl) 0; }
+}
+
+@media (max-width: 768px) {
+  .text-display { font-size: 2.25rem; }
+  .text-h1 { font-size: 2rem; }
+  .text-h2 { font-size: 1.5rem; }
+  .text-h3 { font-size: 1.25rem; }
+  .container { padding: 0 var(--space-md); }
+  .section { padding: var(--space-3xl) 0; }
+}
+
+@media (max-width: 480px) {
+  .text-display { font-size: 1.875rem; }
+  .text-h1 { font-size: 1.625rem; }
+  .btn { padding: 10px 20px; font-size: 0.875rem; }
+}
