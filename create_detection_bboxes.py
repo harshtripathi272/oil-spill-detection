@@ -83,14 +83,31 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--min-width",
         type=int,
-        default=2,
-        help="Minimum bbox width (in pixels).",
+        default=20,
+        help=(
+            "Minimum bbox width in source-image pixels. "
+            "For 2048px source and 1024 training size, 20px ~= 10px effective size."
+        ),
     )
     parser.add_argument(
         "--min-height",
         type=int,
-        default=2,
-        help="Minimum bbox height (in pixels).",
+        default=20,
+        help=(
+            "Minimum bbox height in source-image pixels. "
+            "For 2048px source and 1024 training size, 20px ~= 10px effective size."
+        ),
+    )
+    parser.add_argument(
+        "--disable-merge",
+        action="store_true",
+        help="Disable post-processing that merges nearby fragmented boxes.",
+    )
+    parser.add_argument(
+        "--merge-gap",
+        type=int,
+        default=12,
+        help="Merge boxes whose edges are within this many pixels.",
     )
     parser.add_argument(
         "--overwrite",
@@ -144,6 +161,55 @@ def find_patch_bboxes(binary_mask: np.ndarray, min_area: int, min_width: int, mi
     return bboxes
 
 
+def _boxes_overlap_or_close(a: BBox, b: BBox, gap: int) -> bool:
+    return not (
+        (a.x_max + gap < b.x_min)
+        or (b.x_max + gap < a.x_min)
+        or (a.y_max + gap < b.y_min)
+        or (b.y_max + gap < a.y_min)
+    )
+
+
+def _merge_pair(a: BBox, b: BBox) -> BBox:
+    return BBox(
+        x_min=min(a.x_min, b.x_min),
+        y_min=min(a.y_min, b.y_min),
+        x_max=max(a.x_max, b.x_max),
+        y_max=max(a.y_max, b.y_max),
+    )
+
+
+def merge_fragmented_bboxes(bboxes: list[BBox], merge_gap: int) -> list[BBox]:
+    if len(bboxes) < 2:
+        return bboxes
+
+    merged = list(bboxes)
+    changed = True
+    while changed:
+        changed = False
+        out: list[BBox] = []
+        used = [False] * len(merged)
+
+        for i, current in enumerate(merged):
+            if used[i]:
+                continue
+
+            for j in range(i + 1, len(merged)):
+                if used[j]:
+                    continue
+                if _boxes_overlap_or_close(current, merged[j], gap=merge_gap):
+                    current = _merge_pair(current, merged[j])
+                    used[j] = True
+                    changed = True
+
+            used[i] = True
+            out.append(current)
+
+        merged = out
+
+    return merged
+
+
 def bbox_to_yolo_line(bbox: BBox, image_width: int, image_height: int, class_id: int) -> str:
     x_center = ((bbox.x_min + bbox.x_max) / 2.0) / float(image_width)
     y_center = ((bbox.y_min + bbox.y_max) / 2.0) / float(image_height)
@@ -182,6 +248,8 @@ def process_split(
     min_area: int,
     min_width: int,
     min_height: int,
+    disable_merge: bool,
+    merge_gap: int,
 ) -> tuple[int, int]:
     mask_files = iter_mask_files(masks_split_dir)
     images_seen = 0
@@ -197,6 +265,8 @@ def process_split(
             min_width=min_width,
             min_height=min_height,
         )
+        if not disable_merge and bboxes:
+            bboxes = merge_fragmented_bboxes(bboxes, merge_gap=max(0, merge_gap))
 
         label_lines = [bbox_to_yolo_line(bbox, image_width, image_height, class_id) for bbox in bboxes]
         label_path = output_split_dir / f"{mask_path.stem}.txt"
@@ -235,6 +305,8 @@ def main() -> None:
             min_area=args.min_area,
             min_width=args.min_width,
             min_height=args.min_height,
+            disable_merge=args.disable_merge,
+            merge_gap=args.merge_gap,
         )
         total_images += images_seen
         total_bboxes += bboxes_written

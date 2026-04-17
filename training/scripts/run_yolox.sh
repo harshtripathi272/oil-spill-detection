@@ -22,15 +22,15 @@ echo "Starting YOLO-Large Training with Built-in Augmentations..."
 # It is not a direct CLI argument.
 yolo detect train \
   data="$ROOT/datasets_sliced/data.yaml" \
-  model=$ROOT/../yolo26l.pt\
+  model=$ROOT/../yolo26x.pt\
   epochs=150 \
   patience=20 \
   imgsz=640 \
   batch=16 \
   workers=8 \
   device=0 \
-  project="$ROOT/runs/yolo" \
-  name="yolo26n-sliced-640" \
+  project="$ROOT/runs/yolox" \
+  name="yolo26x-sliced-640" \
   hsv_h=0.015 \
   hsv_s=0.7 \
   hsv_v=0.4 \
