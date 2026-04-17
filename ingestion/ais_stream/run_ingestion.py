@@ -30,6 +30,47 @@ if not API_KEY:
     logger.error("API Key not found. Please set aisstream_api_key in your .env file.")
     sys.exit(1)
 
+
+def _resolve_bounding_boxes():
+    """
+    Resolve stream bounding boxes from AIS_STREAM_BOUNDING_BOXES if provided.
+
+    Expected JSON format:
+    [
+      [[min_lat, min_lon], [max_lat, max_lon]],
+      ...
+    ]
+    """
+    raw = os.getenv("AIS_STREAM_BOUNDING_BOXES", "").strip()
+    if not raw:
+        return [[[-90, -180], [90, 180]]]
+
+    try:
+        boxes = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError("AIS_STREAM_BOUNDING_BOXES must be valid JSON") from exc
+
+    if not isinstance(boxes, list) or not boxes:
+        raise ValueError("AIS_STREAM_BOUNDING_BOXES must be a non-empty JSON array")
+
+    normalized = []
+    for box in boxes:
+        if not isinstance(box, list) or len(box) != 2:
+            raise ValueError("Each bounding box must have two coordinate pairs")
+        low, high = box
+        if not isinstance(low, list) or not isinstance(high, list) or len(low) != 2 or len(high) != 2:
+            raise ValueError("Bounding box coordinates must be [[min_lat, min_lon], [max_lat, max_lon]]")
+
+        min_lat, min_lon = float(low[0]), float(low[1])
+        max_lat, max_lon = float(high[0]), float(high[1])
+
+        if min_lat > max_lat or min_lon > max_lon:
+            raise ValueError("Bounding box min values must be <= max values")
+
+        normalized.append([[min_lat, min_lon], [max_lat, max_lon]])
+
+    return normalized
+
 async def run_ingestion():
     """
     Main ingestion loop. Connects to WebSocket, validates, and routes messages.
@@ -44,13 +85,23 @@ async def run_ingestion():
         logger.critical(f"Failed to initialize Kafka components: {e}")
         return
 
+    try:
+        bounding_boxes = _resolve_bounding_boxes()
+    except ValueError as exc:
+        logger.critical("Invalid AIS_STREAM_BOUNDING_BOXES: %s", exc)
+        if producer:
+            producer.close()
+        if dlq:
+            dlq.close()
+        return
+
     logger.info("Starting AIS Ingestion...")
+    logger.info("Using %d stream bounding box(es)", len(bounding_boxes))
 
     async with websockets.connect(AIS_STREAM_URL) as websocket:
         subscription_message = {
             "APIKey": API_KEY,
-            # Global coverage
-            "BoundingBoxes": [[[-90, -180], [90, 180]]],
+            "BoundingBoxes": bounding_boxes,
             "FilterMessageTypes": ["PositionReport"]
         }
         
