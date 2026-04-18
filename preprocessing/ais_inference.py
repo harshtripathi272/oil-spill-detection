@@ -9,6 +9,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 import pandas as pd
 import torch
+from tqdm import tqdm
 
 from preprocessing.ais_contrastive_train import SequenceTransformerEncoder
 from preprocessing.ais_preprocessing import (
@@ -31,6 +32,8 @@ class InferenceConfig:
 
 
 def _load_model(checkpoint: Path, device: torch.device) -> Tuple[SequenceTransformerEncoder, int]:
+    if not checkpoint.exists():
+        raise FileNotFoundError(f"Checkpoint not found: {checkpoint}")
     ckpt = torch.load(checkpoint, map_location=device)
     model = SequenceTransformerEncoder(
         input_dim=int(ckpt["input_dim"]),
@@ -58,7 +61,7 @@ def _pad(seq: np.ndarray, max_len: int) -> Tuple[np.ndarray, np.ndarray]:
 def _encode_sequences(model: SequenceTransformerEncoder, max_len: int, sequences: List[np.ndarray], device: torch.device) -> np.ndarray:
     out = []
     with torch.no_grad():
-        for seq in sequences:
+        for seq in tqdm(sequences, desc="Encoding inference sequences", unit="voyage"):
             x, m = _pad(np.asarray(seq, dtype=np.float32), max_len)
             xt = torch.from_numpy(x).unsqueeze(0).to(device)
             mt = torch.from_numpy(m).unsqueeze(0).to(device)
@@ -108,6 +111,8 @@ def run_inference(
     sequences = payload["sequences"].tolist()
     metadata = pd.read_parquet(tmp_dir / "voyage_metadata.parquet").reset_index(drop=True)
 
+    if not memory_dir.exists():
+        raise FileNotFoundError(f"Memory directory not found: {memory_dir}")
     global_bank = np.load(memory_dir / "global_embeddings.npy")
     with open(memory_dir / "grid_memory_index.json", "r", encoding="utf-8") as f:
         grid_index = json.load(f)

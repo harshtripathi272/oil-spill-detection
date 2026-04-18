@@ -6,6 +6,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+from tqdm import tqdm
 
 
 def lee_filter(channel: np.ndarray, kernel_size: int = 9) -> np.ndarray:
@@ -225,7 +226,7 @@ def main() -> None:
         raise FileNotFoundError(f"No images found under: {input_dir}")
 
     print(f"Found {len(images)} images under {input_dir}")
-    for idx, in_path in enumerate(images, start=1):
+    for idx, in_path in enumerate(tqdm(images, desc="Preprocessing SAR images", unit="image"), start=1):
         rel = in_path.relative_to(input_dir)
         out_path = output_dir / rel
         preprocess_sar_png(
@@ -241,8 +242,6 @@ def main() -> None:
             denoise_search=args.denoise_search,
             model_input=args.model_input,
         )
-        if idx % 100 == 0 or idx == len(images):
-            print(f"Processed {idx}/{len(images)}")
 
     print(f"Done. Preprocessed images saved to {output_dir}")
 

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import argparse
+from glob import glob
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 
 # Feature order used by training/inference.
 SEQUENCE_FEATURE_COLUMNS = [
@@ -33,12 +35,12 @@ class AISPreprocessConfig:
 
 
 def load_ais_parquets(input_glob: str) -> pd.DataFrame:
-    paths = sorted(Path(p) for p in Path().glob(input_glob))
+    paths = sorted(Path(p) for p in glob(input_glob, recursive=True))
     if not paths:
         raise FileNotFoundError(f"No AIS parquet files matched: {input_glob}")
 
     frames: List[pd.DataFrame] = []
-    for path in paths:
+    for path in tqdm(paths, desc="Loading AIS parquet files", unit="file"):
         df = pd.read_parquet(path)
         df["source_file"] = str(path)
         frames.append(df)
@@ -79,7 +81,8 @@ def clean_ais_globally(df: pd.DataFrame, cfg: AISPreprocessConfig) -> pd.DataFra
 def segment_voyages(df: pd.DataFrame, cfg: AISPreprocessConfig) -> pd.DataFrame:
     parts: List[pd.DataFrame] = []
 
-    for mmsi, grp in df.groupby("mmsi", sort=False):
+    vessel_total = int(df["mmsi"].nunique())
+    for mmsi, grp in tqdm(df.groupby("mmsi", sort=False), total=vessel_total, desc="Segmenting voyages", unit="vessel"):
         g = grp.sort_values("timestamp").copy()
         gap_hours = g["timestamp"].diff().dt.total_seconds().div(3600.0)
         split = (gap_hours > cfg.voyage_gap_hours) | gap_hours.isna()
@@ -122,7 +125,8 @@ def _angle_diff_deg(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 def compute_physics_features(df: pd.DataFrame) -> pd.DataFrame:
     parts: List[pd.DataFrame] = []
 
-    for voyage_id, grp in df.groupby("voyage_id", sort=False):
+    voyage_total = int(df["voyage_id"].nunique())
+    for voyage_id, grp in tqdm(df.groupby("voyage_id", sort=False), total=voyage_total, desc="Computing physics features", unit="voyage"):
         g = grp.sort_values("timestamp").copy()
 
         dt_sec = g["timestamp"].diff().dt.total_seconds()
@@ -205,7 +209,8 @@ def _kinematic_step(lat: float, lon: float, sog_knots: float, cog_deg: float, dt
 def resample_voyages_kinematic(df: pd.DataFrame, interval: str) -> pd.DataFrame:
     frames: List[pd.DataFrame] = []
 
-    for voyage_id, grp in df.groupby("voyage_id", sort=False):
+    voyage_total = int(df["voyage_id"].nunique())
+    for voyage_id, grp in tqdm(df.groupby("voyage_id", sort=False), total=voyage_total, desc="Resampling voyages", unit="voyage"):
         g = grp.sort_values("timestamp").copy()
         g = g.drop_duplicates("timestamp", keep="last")
 
@@ -291,7 +296,8 @@ def build_sequence_dataset(df: pd.DataFrame, output_dir: Path) -> None:
     sequence_list: List[np.ndarray] = []
     metadata_rows: List[Dict[str, object]] = []
 
-    for voyage_id, grp in df.groupby("voyage_id", sort=False):
+    voyage_total = int(df["voyage_id"].nunique())
+    for voyage_id, grp in tqdm(df.groupby("voyage_id", sort=False), total=voyage_total, desc="Building sequences", unit="voyage"):
         g = grp.sort_values("timestamp").copy()
 
         X = g[SEQUENCE_FEATURE_COLUMNS].copy()
@@ -329,6 +335,7 @@ def build_sequence_dataset(df: pd.DataFrame, output_dir: Path) -> None:
 
 
 def run_preprocessing(input_glob: str, output_dir: Path, cfg: AISPreprocessConfig) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
     raw = load_ais_parquets(input_glob=input_glob)
     cleaned = clean_ais_globally(raw, cfg=cfg)
     voyages = segment_voyages(cleaned, cfg=cfg)
@@ -341,6 +348,34 @@ def run_preprocessing(input_glob: str, output_dir: Path, cfg: AISPreprocessConfi
     features_resampled.to_parquet(output_dir / "voyages_features_resampled.parquet", index=False)
 
     build_sequence_dataset(features_resampled, output_dir=output_dir)
+
+
+def validate_preprocessing(input_glob: str, output_dir: Path, cfg: AISPreprocessConfig) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    probe_file = output_dir / ".write_test"
+    probe_file.write_text("ok", encoding="utf-8")
+    probe_file.unlink(missing_ok=True)
+
+    raw = load_ais_parquets(input_glob=input_glob)
+    print(f"Raw rows: {len(raw):,}")
+
+    cleaned = clean_ais_globally(raw, cfg=cfg)
+    print(f"Clean rows: {len(cleaned):,}")
+
+    voyages = segment_voyages(cleaned, cfg=cfg)
+    voyage_count = int(voyages["voyage_id"].nunique())
+    print(f"Voyage rows: {len(voyages):,}")
+    print(f"Voyage count: {voyage_count:,}")
+
+    features_raw = compute_physics_features(voyages)
+    print(f"Raw-feature rows: {len(features_raw):,}")
+
+    resampled = resample_voyages_kinematic(voyages, interval=cfg.resample_interval)
+    features_resampled = compute_physics_features(resampled)
+    print(f"Resampled rows: {len(resampled):,}")
+    print(f"Resampled-feature rows: {len(features_resampled):,}")
+
+    print(f"Validation complete for output dir: {output_dir}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -362,6 +397,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-voyage-points", type=int, default=8)
     parser.add_argument("--min-voyage-minutes", type=float, default=30.0)
     parser.add_argument("--resample-interval", type=str, default="10min")
+    parser.add_argument(
+        "--validate-only",
+        action="store_true",
+        help="Validate input paths and preprocessing steps without writing output artifacts.",
+    )
     return parser.parse_args()
 
 
@@ -377,7 +417,10 @@ def main() -> None:
         resample_interval=args.resample_interval,
     )
 
-    run_preprocessing(input_glob=args.input_glob, output_dir=args.output_dir, cfg=cfg)
+    if args.validate_only:
+        validate_preprocessing(input_glob=args.input_glob, output_dir=args.output_dir, cfg=cfg)
+    else:
+        run_preprocessing(input_glob=args.input_glob, output_dir=args.output_dir, cfg=cfg)
     print(f"Preprocessing complete. Outputs saved to: {args.output_dir}")
 
 

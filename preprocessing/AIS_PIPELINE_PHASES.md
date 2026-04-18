@@ -70,7 +70,15 @@ Scope:
 
 ## Suggested Run Order
 
-1. `python -m preprocessing.ais_preprocessing --input-glob "../data/date=*/ais_data.parquet" --output-dir preprocessing/outputs/ais_sequences`
-2. `python -m preprocessing.ais_contrastive_train --sequences-path preprocessing/outputs/ais_sequences/voyage_sequences.npz --output-dir preprocessing/outputs/ais_model`
-3. `python -m preprocessing.ais_memory_bank --sequences-path preprocessing/outputs/ais_sequences/voyage_sequences.npz --checkpoint preprocessing/outputs/ais_model/encoder.pt --output-dir preprocessing/outputs/ais_memory`
-4. `python -m preprocessing.ais_inference --input-glob "../data/date=*/ais_data.parquet" --checkpoint preprocessing/outputs/ais_model/encoder.pt --memory-dir preprocessing/outputs/ais_memory --output-file preprocessing/outputs/ais_inference/anomaly_scores.parquet`
+1. Validation first:
+   `python -m preprocessing.ais_preprocessing --validate-only --input-glob "../data/processed/day=*/ais_data.parquet" --output-dir preprocessing/outputs/ais_sequences`
+2. Preprocess and build voyages:
+   `python -m preprocessing.ais_preprocessing --input-glob "../data/processed/day=*/ais_data.parquet" --output-dir preprocessing/outputs/ais_sequences`
+3. Train the encoder:
+   `python -m preprocessing.ais_contrastive_train --sequences-path preprocessing/outputs/ais_sequences/voyage_sequences.npz --output-dir preprocessing/outputs/ais_model`
+4. Build the memory bank:
+   `python -m preprocessing.ais_memory_bank --sequences-path preprocessing/outputs/ais_sequences/voyage_sequences.npz --metadata-path preprocessing/outputs/ais_sequences/voyage_metadata.parquet --checkpoint preprocessing/outputs/ais_model/encoder.pt --output-dir preprocessing/outputs/ais_memory`
+5. Run inference:
+   `python -m preprocessing.ais_inference --input-glob "../data/processed/day=*/ais_data.parquet" --checkpoint preprocessing/outputs/ais_model/encoder.pt --memory-dir preprocessing/outputs/ais_memory --output-file preprocessing/outputs/ais_inference/anomaly_scores.parquet`
+6. Visualize embeddings after training:
+   `python -m preprocessing.ais_visualize_embeddings --sequences-path preprocessing/outputs/ais_sequences/voyage_sequences.npz --checkpoint preprocessing/outputs/ais_model/encoder.pt --scores-path preprocessing/outputs/ais_inference/anomaly_scores.parquet --output-file preprocessing/outputs/ais_visuals/embeddings_tsne.png --method tsne`

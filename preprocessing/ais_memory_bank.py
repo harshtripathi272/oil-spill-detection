@@ -8,11 +8,14 @@ from typing import Dict, List, Tuple
 import numpy as np
 import pandas as pd
 import torch
+from tqdm import tqdm
 
 from preprocessing.ais_contrastive_train import SequenceTransformerEncoder
 
 
 def _load_model(checkpoint: Path, device: torch.device) -> Tuple[SequenceTransformerEncoder, int]:
+    if not checkpoint.exists():
+        raise FileNotFoundError(f"Checkpoint not found: {checkpoint}")
     ckpt = torch.load(checkpoint, map_location=device)
     model = SequenceTransformerEncoder(
         input_dim=int(ckpt["input_dim"]),
@@ -40,6 +43,11 @@ def _pad_seq(seq: np.ndarray, max_len: int) -> Tuple[np.ndarray, np.ndarray]:
 def build_memory_bank(sequences_path: Path, metadata_path: Path, checkpoint: Path, output_dir: Path, grid_deg: float = 1.0) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    if not sequences_path.exists():
+        raise FileNotFoundError(f"Sequences file not found: {sequences_path}")
+    if not metadata_path.exists():
+        raise FileNotFoundError(f"Metadata file not found: {metadata_path}")
+
     payload = np.load(sequences_path, allow_pickle=True)
     sequences = payload["sequences"].tolist()
     metadata = pd.read_parquet(metadata_path)
@@ -48,7 +56,7 @@ def build_memory_bank(sequences_path: Path, metadata_path: Path, checkpoint: Pat
     model, max_len = _load_model(checkpoint, device=device)
 
     embeds: List[np.ndarray] = []
-    for seq in sequences:
+    for seq in tqdm(sequences, desc="Encoding memory bank", unit="voyage"):
         x, m = _pad_seq(np.asarray(seq, dtype=np.float32), max_len=max_len)
         xt = torch.from_numpy(x).unsqueeze(0).to(device)
         mt = torch.from_numpy(m).unsqueeze(0).to(device)
@@ -61,7 +69,7 @@ def build_memory_bank(sequences_path: Path, metadata_path: Path, checkpoint: Pat
 
     # Build location-specific subsets using voyage start lat/lon.
     grid_map: Dict[str, List[int]] = {}
-    for i, row in metadata.reset_index(drop=True).iterrows():
+    for i, row in tqdm(metadata.reset_index(drop=True).iterrows(), total=len(metadata), desc="Building grid index", unit="voyage"):
         lat_bin = int(np.floor(float(row["start_lat"]) / grid_deg))
         lon_bin = int(np.floor(float(row["start_lon"]) / grid_deg))
         key = f"{lat_bin}_{lon_bin}"
@@ -73,7 +81,7 @@ def build_memory_bank(sequences_path: Path, metadata_path: Path, checkpoint: Pat
     # Lightweight per-vessel running stats.
     vessel_stats = []
     md = metadata.reset_index(drop=True)
-    for mmsi, grp in md.groupby("mmsi"):
+    for mmsi, grp in tqdm(md.groupby("mmsi"), total=int(md["mmsi"].nunique()), desc="Building vessel stats", unit="vessel"):
         idx = grp.index.to_numpy()
         if len(idx) < 2:
             continue

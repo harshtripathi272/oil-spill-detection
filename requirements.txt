@@ -14,6 +14,7 @@ flake8
 pydantic>=2.0
 mypy
 sentinelsat>=1.2.1
+scikit-learn
 asf_search
 tifffile
 imagecodecs
@@ -26,3 +27,4 @@ segmentation-models-pytorch
 albumentations
 PyYAML
 scikit-image
+matplotlib

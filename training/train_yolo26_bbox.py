@@ -281,7 +281,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--model",
         type=str,
-        default=str((ROOT.parent / "yolo26n.pt").resolve()),
+        default=str((ROOT.parent / "yolo26x.pt").resolve()),
         help="YOLOv26 model path or model name.",
     )
     parser.add_argument("--epochs", type=int, default=100)
@@ -293,7 +293,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--weight-decay", type=float, default=5e-4)
     parser.add_argument("--optimizer", type=str, default="AdamW")
     parser.add_argument("--project", type=Path, default=ROOT / "runs" / "yolo")
-    parser.add_argument("--name", type=str, default="yolo26n-bbox-albumentations")
+    parser.add_argument("--name", type=str, default="yolo26x-bbox-albumentations")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--wandb-project", type=str, default="oilspill")
     parser.add_argument("--wandb-entity", type=str, default=None)

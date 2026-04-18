@@ -10,9 +10,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
+from tqdm import tqdm
 
 
 def _load_npz_sequences(path: Path) -> List[np.ndarray]:
+    if not path.exists():
+        raise FileNotFoundError(f"Sequences file not found: {path}")
     data = np.load(path, allow_pickle=True)
     seqs = data["sequences"].tolist()
     return [np.asarray(s, dtype=np.float32) for s in seqs]
@@ -224,10 +227,11 @@ def train(sequences_path: Path, output_dir: Path, cfg: TrainConfig) -> None:
 
     opt = torch.optim.Adam(model.parameters(), lr=cfg.lr)
 
-    for epoch in range(cfg.epochs):
+    for epoch in tqdm(range(cfg.epochs), desc="Training epochs", unit="epoch"):
         model.train()
         losses: List[float] = []
-        for x1, m1, x2, m2 in dl:
+        batch_iter = tqdm(dl, desc=f"Epoch {epoch + 1}/{cfg.epochs}", unit="batch", leave=False)
+        for x1, m1, x2, m2 in batch_iter:
             x1, m1 = x1.to(device), m1.to(device)
             x2, m2 = x2.to(device), m2.to(device)
 
@@ -239,6 +243,7 @@ def train(sequences_path: Path, output_dir: Path, cfg: TrainConfig) -> None:
             loss.backward()
             opt.step()
             losses.append(float(loss.item()))
+            batch_iter.set_postfix(loss=f"{loss.item():.4f}")
 
         print(f"Epoch {epoch + 1}/{cfg.epochs} loss={np.mean(losses):.4f}")
 
