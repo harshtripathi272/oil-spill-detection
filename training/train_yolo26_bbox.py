@@ -9,11 +9,40 @@ from pathlib import Path
 
 import albumentations as A
 import cv2
+import pandas as pd
 import wandb
 import yaml
 from ultralytics import YOLO
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _log_yolo_history_to_wandb(run_dir: Path) -> None:
+    """Log per-epoch history from Ultralytics results.csv to W&B."""
+    results_csv = run_dir / "results.csv"
+    if not results_csv.exists():
+        print(f"results.csv not found under {run_dir}; skipping epoch-history W&B log.")
+        return
+
+    hist = pd.read_csv(results_csv)
+    if hist.empty:
+        return
+
+    for _, row in hist.iterrows():
+        step = int(row.get("epoch", 0)) + 1
+        payload = {}
+        for col in hist.columns:
+            if col == "epoch":
+                continue
+            val = row[col]
+            if pd.notna(val):
+                payload[f"history/{col}"] = float(val)
+        if payload:
+            wandb.log(payload, step=step)
+
+    artifact = wandb.Artifact(name=f"{run_dir.name}-history", type="metrics")
+    artifact.add_file(str(results_csv))
+    wandb.log_artifact(artifact)
 
 
 def resolve_images_root(images_root: Path, prefer_preprocessed: bool) -> Path:
@@ -412,6 +441,9 @@ def main() -> None:
     if val_metrics:
         wandb.log({f"val/{k}": v for k, v in val_metrics.items()})
 
+    run_dir = Path(args.project) / args.name
+    _log_yolo_history_to_wandb(run_dir)
+
     # Surface common metrics in summary for quick experiment comparison.
     for k in (
         "metrics/mAP50(B)",
@@ -424,7 +456,6 @@ def main() -> None:
             wandb.summary[f"val/{k}"] = val_metrics[k]
 
     artifact = wandb.Artifact(name=f"{run.name}-weights", type="model")
-    run_dir = Path(args.project) / args.name
     best = run_dir / "weights" / "best.pt"
     last = run_dir / "weights" / "last.pt"
     if best.exists():

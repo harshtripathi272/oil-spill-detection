@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Tuple
@@ -9,6 +10,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import wandb
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
@@ -202,6 +204,11 @@ class TrainConfig:
     emb_dim: int = 64
     window_size: int = 30
     hard_negative_k: int = 16
+    wandb_project: str = "oilspill-ais"
+    wandb_entity: str | None = None
+    wandb_mode: str = "online"
+    wandb_name: str | None = None
+    wandb_log_every_n_steps: int = 20
 
 
 def train(sequences_path: Path, output_dir: Path, cfg: TrainConfig) -> None:
@@ -226,6 +233,32 @@ def train(sequences_path: Path, output_dir: Path, cfg: TrainConfig) -> None:
     ).to(device)
 
     opt = torch.optim.Adam(model.parameters(), lr=cfg.lr)
+    history_rows: list[dict[str, float]] = []
+
+    run = wandb.init(
+        project=cfg.wandb_project,
+        entity=cfg.wandb_entity,
+        mode=cfg.wandb_mode,
+        name=cfg.wandb_name,
+        config={
+            "sequences_path": str(sequences_path),
+            "output_dir": str(output_dir),
+            "epochs": cfg.epochs,
+            "batch_size": cfg.batch_size,
+            "lr": cfg.lr,
+            "max_len": cfg.max_len,
+            "model_dim": cfg.model_dim,
+            "nhead": cfg.nhead,
+            "layers": cfg.layers,
+            "emb_dim": cfg.emb_dim,
+            "window_size": cfg.window_size,
+            "hard_negative_k": cfg.hard_negative_k,
+            "input_dim": input_dim,
+        },
+        reinit=True,
+    )
+
+    global_step = 0
 
     for epoch in tqdm(range(cfg.epochs), desc="Training epochs", unit="epoch"):
         model.train()
@@ -245,7 +278,28 @@ def train(sequences_path: Path, output_dir: Path, cfg: TrainConfig) -> None:
             losses.append(float(loss.item()))
             batch_iter.set_postfix(loss=f"{loss.item():.4f}")
 
-        print(f"Epoch {epoch + 1}/{cfg.epochs} loss={np.mean(losses):.4f}")
+            global_step += 1
+            if cfg.wandb_log_every_n_steps > 0 and global_step % cfg.wandb_log_every_n_steps == 0:
+                wandb.log(
+                    {
+                        "train/loss_step": float(loss.item()),
+                        "train/lr": float(opt.param_groups[0]["lr"]),
+                        "train/epoch": epoch + 1,
+                    },
+                    step=global_step,
+                )
+
+        epoch_loss = float(np.mean(losses))
+        history_rows.append({"epoch": epoch + 1, "loss": epoch_loss})
+        wandb.log(
+            {
+                "train/loss_epoch": epoch_loss,
+                "train/lr": float(opt.param_groups[0]["lr"]),
+                "train/epoch": epoch + 1,
+            },
+            step=global_step,
+        )
+        print(f"Epoch {epoch + 1}/{cfg.epochs} loss={epoch_loss:.4f}")
 
     ckpt = {
         "state_dict": model.state_dict(),
@@ -260,6 +314,18 @@ def train(sequences_path: Path, output_dir: Path, cfg: TrainConfig) -> None:
     }
     torch.save(ckpt, output_dir / "encoder.pt")
     print(f"Saved encoder checkpoint to {output_dir / 'encoder.pt'}")
+
+    history_path = output_dir / "training_history.json"
+    history_path.write_text(json.dumps(history_rows, indent=2), encoding="utf-8")
+
+    artifact = wandb.Artifact(name=f"{run.name}-encoder", type="model")
+    artifact.add_file(str(output_dir / "encoder.pt"))
+    artifact.add_file(str(history_path))
+    wandb.log_artifact(artifact)
+
+    if history_rows:
+        wandb.summary["train/final_loss"] = history_rows[-1]["loss"]
+    wandb.finish()
 
 
 def parse_args() -> argparse.Namespace:
@@ -276,6 +342,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--emb-dim", type=int, default=64)
     parser.add_argument("--window-size", type=int, default=30)
     parser.add_argument("--hard-negative-k", type=int, default=16)
+    parser.add_argument("--wandb-project", type=str, default="oilspill-ais")
+    parser.add_argument("--wandb-entity", type=str, default=None)
+    parser.add_argument(
+        "--wandb-mode",
+        type=str,
+        default="online",
+        choices=["online", "offline", "disabled"],
+    )
+    parser.add_argument("--wandb-name", type=str, default=None)
+    parser.add_argument("--wandb-log-every-n-steps", type=int, default=20)
     return parser.parse_args()
 
 
@@ -292,6 +368,11 @@ def main() -> None:
         emb_dim=args.emb_dim,
         window_size=args.window_size,
         hard_negative_k=args.hard_negative_k,
+        wandb_project=args.wandb_project,
+        wandb_entity=args.wandb_entity,
+        wandb_mode=args.wandb_mode,
+        wandb_name=args.wandb_name,
+        wandb_log_every_n_steps=args.wandb_log_every_n_steps,
     )
     train(args.sequences_path, args.output_dir, cfg)
 

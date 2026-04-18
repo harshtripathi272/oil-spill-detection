@@ -40,9 +40,13 @@ def load_ais_parquets(input_glob: str) -> pd.DataFrame:
         raise FileNotFoundError(f"No AIS parquet files matched: {input_glob}")
 
     frames: List[pd.DataFrame] = []
-    for path in tqdm(paths, desc="Loading AIS parquet files", unit="file"):
+    running_rows = 0
+    bar = tqdm(paths, desc="Loading AIS parquet files", unit="file")
+    for path in bar:
         df = pd.read_parquet(path)
         df["source_file"] = str(path)
+        running_rows += len(df)
+        bar.set_postfix(rows=f"{running_rows:,}")
         frames.append(df)
 
     combined = pd.concat(frames, ignore_index=True)
