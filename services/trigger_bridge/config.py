@@ -10,7 +10,7 @@ class TriggerBridgeConfig:
     output_topic: str = field(default_factory=lambda: os.getenv("SAR_TRIGGER_TOPIC", "sar.trigger.events"))
     deadletter_topic: str = field(default_factory=lambda: os.getenv("AIS_DEADLETTER_TOPIC", "ais.deadletter"))
 
-    trigger_score_threshold: float = field(default_factory=lambda: float(os.getenv("SAR_TRIGGER_SCORE_THRESHOLD", "0.75")))
+    trigger_score_threshold: float = field(default_factory=lambda: float(os.getenv("SAR_TRIGGER_SCORE_THRESHOLD", "0.65")))
     allowed_bbox: str = field(default_factory=lambda: os.getenv("SAR_TRIGGER_ALLOWED_BBOX", ""))
 
     poll_timeout_ms: int = field(default_factory=lambda: int(os.getenv("AIS_TRIGGER_BRIDGE_POLL_TIMEOUT_MS", "1000")))

@@ -2,6 +2,7 @@ import hashlib
 import json
 import logging
 import math
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
@@ -145,10 +146,19 @@ def _extract_lat_lon(msg: Dict[str, Any]) -> Tuple[Optional[float], Optional[flo
 
 def _extract_timestamp(msg: Dict[str, Any]) -> Optional[str]:
     pr = _position_report_payload(msg)
-    ts = None
+    metadata = msg.get("MetaData", {}) if isinstance(msg.get("MetaData"), dict) else {}
+
+    ts = msg.get("timestamp") or msg.get("time") or msg.get("ts")
+    if ts is None:
+        ts = metadata.get("time_utc") or metadata.get("timeUTC") or metadata.get("time")
+
+    # PositionReport.Timestamp is often just second-of-minute; use only if it
+    # already looks like a full datetime string.
     if isinstance(pr, dict):
-        ts = pr.get("Timestamp")
-    ts = ts or msg.get("timestamp") or msg.get("time") or msg.get("ts")
+        pr_ts = pr.get("Timestamp")
+        if ts is None and isinstance(pr_ts, str) and ("-" in pr_ts or "T" in pr_ts):
+            ts = pr_ts
+
     return str(ts) if ts is not None else None
 
 
@@ -193,10 +203,26 @@ def _normalize_iso8601(value: str) -> Optional[str]:
     if not raw:
         return None
 
-    normalized = raw.replace("Z", "+00:00")
-    try:
-        dt = datetime.fromisoformat(normalized)
-    except ValueError:
+    candidates = []
+    candidates.append(raw.replace("Z", "+00:00"))
+
+    # AISStream time_utc commonly appears as:
+    # "2026-01-30 17:13:40.186926422 +0000 UTC"
+    # Normalize to a Python-compatible ISO-like variant.
+    cleaned = raw.replace(" UTC", "")
+    cleaned = re.sub(r"\s([+-]\d{2})(\d{2})$", r"\1:\2", cleaned)
+    cleaned = re.sub(r"\.(\d{6})\d+(?=\s[+-]\d{2}:\d{2}$)", r".\1", cleaned)
+    candidates.append(cleaned.replace("Z", "+00:00"))
+
+    dt = None
+    for normalized in candidates:
+        try:
+            dt = datetime.fromisoformat(normalized)
+            break
+        except ValueError:
+            continue
+
+    if dt is None:
         return None
 
     if dt.tzinfo is None:
