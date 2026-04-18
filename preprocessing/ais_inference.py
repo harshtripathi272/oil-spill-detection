@@ -38,8 +38,9 @@ def _load_model(checkpoint: Path, device: torch.device) -> Tuple[SequenceTransfo
         nhead=int(ckpt["nhead"]),
         layers=int(ckpt["layers"]),
         emb_dim=int(ckpt["emb_dim"]),
+        max_pos_len=max(int(ckpt.get("max_len", 256)), int(ckpt.get("window_size", 30)), 512),
     ).to(device)
-    model.load_state_dict(ckpt["state_dict"])
+    model.load_state_dict(ckpt["state_dict"], strict=False)
     model.eval()
     return model, int(ckpt["max_len"])
 

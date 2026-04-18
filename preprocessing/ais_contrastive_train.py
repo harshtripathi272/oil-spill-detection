@@ -62,10 +62,19 @@ def augment_sequence(seq: np.ndarray) -> np.ndarray:
     return out
 
 
+def _sample_temporal_window(seq: np.ndarray, window_size: int) -> np.ndarray:
+    n = seq.shape[0]
+    if n <= window_size:
+        return seq.copy()
+    start = np.random.randint(0, n - window_size + 1)
+    return seq[start : start + window_size]
+
+
 class VoyageContrastiveDataset(Dataset):
-    def __init__(self, sequences: List[np.ndarray], max_len: int):
+    def __init__(self, sequences: List[np.ndarray], max_len: int, window_size: int):
         self.sequences = sequences
         self.max_len = max_len
+        self.window_size = window_size
 
     def __len__(self) -> int:
         return len(self.sequences)
@@ -81,48 +90,101 @@ class VoyageContrastiveDataset(Dataset):
 
     def __getitem__(self, idx: int):
         base = self.sequences[idx]
-        v1 = augment_sequence(base)
-        v2 = augment_sequence(base)
+        w1 = _sample_temporal_window(base, window_size=self.window_size)
+        w2 = _sample_temporal_window(base, window_size=self.window_size)
+        v1 = augment_sequence(w1)
+        v2 = augment_sequence(w2)
         x1, m1 = self._pad(v1)
         x2, m2 = self._pad(v2)
         return torch.from_numpy(x1), torch.from_numpy(m1), torch.from_numpy(x2), torch.from_numpy(m2)
 
 
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model: int, max_len: int = 500):
+        super().__init__()
+        pe = torch.zeros(max_len, d_model)
+        pos = torch.arange(0, max_len, dtype=torch.float32).unsqueeze(1)
+
+        div_term = torch.exp(
+            torch.arange(0, d_model, 2, dtype=torch.float32) * (-np.log(10000.0) / d_model)
+        )
+        pe[:, 0::2] = torch.sin(pos * div_term)
+        pe[:, 1::2] = torch.cos(pos * div_term)
+        self.register_buffer("pe", pe.unsqueeze(0), persistent=False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x + self.pe[:, : x.size(1)].to(x.device)
+
+
 class SequenceTransformerEncoder(nn.Module):
-    def __init__(self, input_dim: int, model_dim: int, nhead: int, layers: int, emb_dim: int):
+    def __init__(
+        self,
+        input_dim: int,
+        model_dim: int,
+        nhead: int,
+        layers: int,
+        emb_dim: int,
+        max_pos_len: int = 1024,
+    ):
         super().__init__()
         self.proj = nn.Linear(input_dim, model_dim)
+        self.pos_enc = PositionalEncoding(model_dim, max_len=max_pos_len)
         enc_layer = nn.TransformerEncoderLayer(d_model=model_dim, nhead=nhead, batch_first=True)
         self.encoder = nn.TransformerEncoder(enc_layer, num_layers=layers)
-        self.head = nn.Sequential(
+        self.attn_pool = nn.Linear(model_dim, 1)
+        self.projector = nn.Sequential(
             nn.Linear(model_dim, model_dim),
+            nn.BatchNorm1d(model_dim),
             nn.ReLU(),
             nn.Linear(model_dim, emb_dim),
         )
 
-    def forward(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    def encode(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         h = self.proj(x)
+        h = self.pos_enc(h)
         key_padding_mask = mask < 0.5
         h = self.encoder(h, src_key_padding_mask=key_padding_mask)
-        denom = torch.clamp(mask.sum(dim=1, keepdim=True), min=1.0)
-        pooled = (h * mask.unsqueeze(-1)).sum(dim=1) / denom
-        z = self.head(pooled)
+
+        scores = self.attn_pool(h).squeeze(-1)
+        scores = scores.masked_fill(key_padding_mask, -1e9)
+        weights = torch.softmax(scores, dim=1)
+        pooled = (h * weights.unsqueeze(-1)).sum(dim=1)
+        return pooled
+
+    def forward(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        pooled = self.encode(x, mask)
+        z = self.projector(pooled)
         return F.normalize(z, dim=-1)
 
 
-def info_nce(z1: torch.Tensor, z2: torch.Tensor, temperature: float = 0.1) -> torch.Tensor:
+def info_nce(z1: torch.Tensor, z2: torch.Tensor, temperature: float = 0.1, hard_negative_k: int = 16) -> torch.Tensor:
     batch = z1.size(0)
     z = torch.cat([z1, z2], dim=0)
-    sim = z @ z.T / temperature
+    sim = (z @ z.T) / temperature
 
-    mask = torch.eye(2 * batch, device=z.device, dtype=torch.bool)
-    sim = sim.masked_fill(mask, -1e9)
+    n = 2 * batch
+    eye = torch.eye(n, device=z.device, dtype=torch.bool)
+    sim = sim.masked_fill(eye, -1e9)
 
-    pos = torch.cat([
-        torch.arange(batch, 2 * batch, device=z.device),
-        torch.arange(0, batch, device=z.device),
-    ])
-    return F.cross_entropy(sim, pos)
+    pos = torch.cat(
+        [
+            torch.arange(batch, 2 * batch, device=z.device),
+            torch.arange(0, batch, device=z.device),
+        ]
+    )
+
+    positives = sim[torch.arange(n, device=z.device), pos].unsqueeze(1)
+
+    # Hard-negative mining: keep top-k most similar negatives for each anchor.
+    neg = sim.clone()
+    neg[torch.arange(n, device=z.device), pos] = -1e9
+
+    k = max(1, min(hard_negative_k, n - 2))
+    hardest_neg, _ = torch.topk(neg, k=k, dim=1)
+
+    logits = torch.cat([positives, hardest_neg], dim=1)
+    labels = torch.zeros(n, device=z.device, dtype=torch.long)
+    return F.cross_entropy(logits, labels)
 
 
 @dataclass
@@ -135,6 +197,8 @@ class TrainConfig:
     nhead: int = 4
     layers: int = 2
     emb_dim: int = 64
+    window_size: int = 30
+    hard_negative_k: int = 16
 
 
 def train(sequences_path: Path, output_dir: Path, cfg: TrainConfig) -> None:
@@ -145,7 +209,7 @@ def train(sequences_path: Path, output_dir: Path, cfg: TrainConfig) -> None:
         raise ValueError("No sequences found for training")
 
     input_dim = int(seqs[0].shape[1])
-    ds = VoyageContrastiveDataset(seqs, max_len=cfg.max_len)
+    ds = VoyageContrastiveDataset(seqs, max_len=cfg.max_len, window_size=cfg.window_size)
     dl = DataLoader(ds, batch_size=cfg.batch_size, shuffle=True, drop_last=True)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -155,6 +219,7 @@ def train(sequences_path: Path, output_dir: Path, cfg: TrainConfig) -> None:
         nhead=cfg.nhead,
         layers=cfg.layers,
         emb_dim=cfg.emb_dim,
+        max_pos_len=max(cfg.max_len, cfg.window_size, 512),
     ).to(device)
 
     opt = torch.optim.Adam(model.parameters(), lr=cfg.lr)
@@ -168,7 +233,7 @@ def train(sequences_path: Path, output_dir: Path, cfg: TrainConfig) -> None:
 
             z1 = model(x1, m1)
             z2 = model(x2, m2)
-            loss = info_nce(z1, z2)
+            loss = info_nce(z1, z2, hard_negative_k=cfg.hard_negative_k)
 
             opt.zero_grad(set_to_none=True)
             loss.backward()
@@ -185,6 +250,8 @@ def train(sequences_path: Path, output_dir: Path, cfg: TrainConfig) -> None:
         "layers": cfg.layers,
         "emb_dim": cfg.emb_dim,
         "max_len": cfg.max_len,
+        "window_size": cfg.window_size,
+        "hard_negative_k": cfg.hard_negative_k,
     }
     torch.save(ckpt, output_dir / "encoder.pt")
     print(f"Saved encoder checkpoint to {output_dir / 'encoder.pt'}")
@@ -202,6 +269,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--nhead", type=int, default=4)
     parser.add_argument("--layers", type=int, default=2)
     parser.add_argument("--emb-dim", type=int, default=64)
+    parser.add_argument("--window-size", type=int, default=30)
+    parser.add_argument("--hard-negative-k", type=int, default=16)
     return parser.parse_args()
 
 
@@ -216,6 +285,8 @@ def main() -> None:
         nhead=args.nhead,
         layers=args.layers,
         emb_dim=args.emb_dim,
+        window_size=args.window_size,
+        hard_negative_k=args.hard_negative_k,
     )
     train(args.sequences_path, args.output_dir, cfg)
 
