@@ -110,7 +110,12 @@ def run() -> None:
                     )
                     continue
 
-                if model_score.score < cfg.anomaly_score_threshold:
+                if cfg.placeholder_force_emit:
+                    anomaly_event["score"] = cfg.placeholder_forced_score
+                    anomaly_event["anomaly_type"] = cfg.placeholder_anomaly_type
+                    if isinstance(anomaly_event.get("model"), dict):
+                        anomaly_event["model"]["label"] = "anomalous"
+                elif model_score.score < cfg.anomaly_score_threshold:
                     discarded += 1
                     continue
 

@@ -64,6 +64,11 @@ def run() -> None:
 
     logger.info("Starting trigger bridge")
     logger.info("Kafka bootstrap=%s input=%s output=%s", cfg.kafka_bootstrap_servers, cfg.input_topic, cfg.output_topic)
+    logger.info(
+        "Trigger filter config: score_threshold=%s allowed_bbox=%s",
+        cfg.trigger_score_threshold,
+        cfg.allowed_bbox or "<none>",
+    )
 
     consumer = None
     producer = None
@@ -101,6 +106,8 @@ def run() -> None:
                 )
                 if not should_forward:
                     filtered += 1
+                    if filtered <= 5:
+                        logger.info("Filtered anomaly event: %s", reason)
                     continue
 
                 trigger_event, err = build_trigger_event(anomaly_event)

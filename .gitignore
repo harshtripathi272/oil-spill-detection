@@ -31,7 +31,8 @@ coverage
 
 # Bower dependency directory (https://bower.io/)
 bower_components
-
+*.pt
+*.log
 # node-waf configuration
 .lock-wscript
 
@@ -201,4 +202,5 @@ airflow.log
 /services/ui/node_modules
 /services/ui/stats.html
 
-stitch-skills
+stitch-skillsdatasets_sliced/
+/datasets_sliced/
