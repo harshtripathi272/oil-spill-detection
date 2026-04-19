@@ -38,9 +38,11 @@ Goal:
 Scope:
 
 1. Consume `ais.features.vessel_tracks`
-2. Score events using nearest-match lookup from `preprocessing/ais_inference.py` output parquet
-3. Publish `ais.anomalies.events` with score and anomaly metadata
-4. Add deterministic event IDs for idempotency
+2. Maintain a sliding voyage window per MMSI
+3. Encode the live window with the trained AIS Transformer encoder
+4. Score the embedding against the preloaded memory bank with FAISS
+5. Publish `ais.anomalies.events` with score and anomaly metadata
+6. Add deterministic event IDs for idempotency
 
 Current model:
 

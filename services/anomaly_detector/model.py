@@ -1,9 +1,12 @@
 import hashlib
+import logging
 import json
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
+from collections import deque
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Deque, Dict, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -18,6 +21,21 @@ except ImportError:
     FAISS_AVAILABLE = False
 
 from preprocessing.ais_contrastive_train import SequenceTransformerEncoder
+
+logger = logging.getLogger(__name__)
+
+LIVE_FEATURE_COLUMNS = [
+    "speed_knots",
+    "accel_knots_per_sec",
+    "turn_rate_deg_per_sec",
+    "heading_cog_diff_deg",
+    "norm_speed",
+    "tod_sin",
+    "tod_cos",
+    "cog_sin",
+    "cog_cos",
+    "distance_km",
+]
 
 
 @dataclass
@@ -135,118 +153,6 @@ def _pad(seq: np.ndarray, max_len: int) -> Tuple[np.ndarray, np.ndarray]:
     return x, m
 
 
-class AISInferenceScoreModel:
-    """Model wrapper that serves scores produced by preprocessing.ais_inference."""
-
-    def __init__(
-        self,
-        model_name: str,
-        scores_path: str,
-        score_match_window_sec: int = 21600,
-        reload_interval_sec: int = 300,
-    ):
-        self.model_name = model_name
-        self.scores_path = Path(scores_path)
-        self.score_match_window_sec = max(0, int(score_match_window_sec))
-        self.reload_interval_sec = max(1, int(reload_interval_sec))
-        self._last_loaded_at: Optional[datetime] = None
-        self._last_mtime_ns: Optional[int] = None
-        self._scores_df: Optional[pd.DataFrame] = None
-        self._by_mmsi: Dict[str, pd.DataFrame] = {}
-
-    def _ensure_scores_loaded(self) -> None:
-        now = datetime.utcnow()
-        should_reload = self._scores_df is None
-
-        if self._last_loaded_at is not None and not should_reload:
-            delta = (now - self._last_loaded_at).total_seconds()
-            should_reload = delta >= self.reload_interval_sec
-
-        if not should_reload:
-            return
-
-        if not self.scores_path.exists():
-            self._scores_df = pd.DataFrame()
-            self._by_mmsi = {}
-            self._last_loaded_at = now
-            self._last_mtime_ns = None
-            return
-
-        stat = self.scores_path.stat()
-        mtime_ns = int(stat.st_mtime_ns)
-        if self._scores_df is not None and self._last_mtime_ns == mtime_ns:
-            self._last_loaded_at = now
-            return
-
-        df = pd.read_parquet(self.scores_path)
-        required = {"mmsi", "start_timestamp", "combined_score"}
-        if not required.issubset(df.columns):
-            missing = sorted(required - set(df.columns))
-            raise ValueError(f"AIS inference scores missing required columns: {missing}")
-
-        work = df.copy()
-        work["mmsi"] = work["mmsi"].astype(str)
-        work["start_timestamp"] = pd.to_datetime(work["start_timestamp"], utc=True, errors="coerce")
-        work = work.dropna(subset=["start_timestamp", "combined_score"]).reset_index(drop=True)
-
-        # Preserve vessel_type if available (used for fallback cohort scoring metadata).
-        if "vessel_type" not in work.columns:
-            work["vessel_type"] = "Unknown"
-
-        grouped: Dict[str, pd.DataFrame] = {}
-        for mmsi, grp in work.groupby("mmsi", sort=False):
-            grouped[str(mmsi)] = grp.sort_values("start_timestamp").reset_index(drop=True)
-
-        self._scores_df = work
-        self._by_mmsi = grouped
-        self._last_loaded_at = now
-        self._last_mtime_ns = mtime_ns
-
-    def infer(self, feature_event: Dict[str, Any]) -> ModelScore:
-        self._ensure_scores_loaded()
-
-        vessel_id = feature_event.get("vessel_id")
-        ts_raw = feature_event.get("timestamp")
-        if vessel_id is None or ts_raw is None:
-            return ModelScore(score=0.0, label="normal", metadata={"reason": "missing_vessel_or_timestamp"})
-
-        mmsi = str(vessel_id)
-        ts = pd.to_datetime(str(ts_raw), utc=True, errors="coerce")
-        if pd.isna(ts):
-            return ModelScore(score=0.0, label="normal", metadata={"reason": "invalid_timestamp"})
-
-        vessel_df = self._by_mmsi.get(mmsi)
-        if vessel_df is None or vessel_df.empty:
-            return ModelScore(score=0.0, label="normal", metadata={"reason": "mmsi_not_found"})
-
-        ref_ts = vessel_df["start_timestamp"]
-        delta_sec = (ref_ts - ts).dt.total_seconds().abs().to_numpy(dtype=np.float64)
-        idx = int(np.argmin(delta_sec))
-        best_delta = float(delta_sec[idx])
-        if best_delta > self.score_match_window_sec:
-            return ModelScore(
-                score=0.0,
-                label="normal",
-                metadata={"reason": "no_match_within_window", "delta_sec": best_delta},
-            )
-
-        matched = vessel_df.iloc[idx]
-        score = float(matched.get("combined_score", 0.0))
-        score = max(0.0, min(score, 1.0))
-        vessel_type = str(matched.get("vessel_type", "Unknown"))
-
-        label = "anomalous" if bool(matched.get("is_anomaly", score >= 0.8)) else "normal"
-        return ModelScore(
-            score=score,
-            label=label,
-            metadata={
-                "matched_start_timestamp": str(matched.get("start_timestamp")),
-                "vessel_type": vessel_type,
-                "delta_sec": best_delta,
-            },
-        )
-
-
 class AISRealtimeMemoryBankModel:
     """Realtime scorer that encodes the live voyage window and compares it to the memory bank."""
 
@@ -258,6 +164,8 @@ class AISRealtimeMemoryBankModel:
         score_threshold: float = 0.8,
         k_neighbors: int = 5,
         min_window_points: int = 4,
+        trajectory_window_size: int = 30,
+        score_smoothing_window_size: int = 5,
         use_faiss: bool = True,
     ):
         self.model_name = model_name
@@ -266,6 +174,8 @@ class AISRealtimeMemoryBankModel:
         self.score_threshold = float(score_threshold)
         self.k_neighbors = max(1, int(k_neighbors))
         self.min_window_points = max(2, int(min_window_points))
+        self.trajectory_window_size = max(2, int(trajectory_window_size))
+        self.score_smoothing_window_size = max(1, int(score_smoothing_window_size))
         self.use_faiss = bool(use_faiss and FAISS_AVAILABLE)
 
         self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -276,6 +186,12 @@ class AISRealtimeMemoryBankModel:
         self._grid_index: Dict[str, list[int]] = {}
         self._vessel_stats: Dict[str, Dict[str, Any]] = {}
         self._vessel_type_index: Dict[str, list[int]] = {}
+        self._trajectory_buffers: Dict[str, Deque[Dict[str, Any]]] = {}
+        self._score_buffers: Dict[str, Deque[float]] = {}
+        self._local_faiss_cache: Dict[str, object] = {}
+        self._cohort_faiss_cache: Dict[str, object] = {}
+        self._encode_latency_total_sec = 0.0
+        self._encode_latency_count = 0
 
         self._load_artifacts()
 
@@ -329,25 +245,40 @@ class AISRealtimeMemoryBankModel:
         if self._encoder is None or self._max_len is None or self._global_bank is None:
             return ModelScore(score=0.0, label="normal", metadata={"reason": "model_not_loaded"})
 
-        features = feature_event.get("features", {}) if isinstance(feature_event.get("features"), dict) else {}
-        sequence = self._build_live_sequence(features)
+        vessel_id = str(feature_event.get("vessel_id", "")).strip()
+        if not vessel_id:
+            return ModelScore(score=0.0, label="insufficient_data", metadata={"reason": "missing_vessel_id"})
+
+        current_observation = self._extract_current_observation(feature_event)
+        if current_observation is None:
+            return ModelScore(score=0.0, label="insufficient_data", metadata={"reason": "missing_current_observation"})
+
+        self._append_observation(vessel_id, current_observation)
+        sequence = self._build_live_sequence(vessel_id)
         if sequence.shape[0] < self.min_window_points:
-            return ModelScore(score=0.0, label="normal", metadata={"reason": "insufficient_window", "window_points": int(sequence.shape[0])})
+            return ModelScore(
+                score=0.0,
+                label="insufficient_data",
+                metadata={"reason": "warmup_insufficient_window", "window_points": int(sequence.shape[0])},
+            )
 
         query = self._encode_sequence(sequence)
-        global_score = self._knn_score(self._global_bank, query)
+        global_score = self._knn_score(self._global_bank, query, self._global_index)
 
-        start_lat, start_lon = self._extract_start_lat_lon(features)
+        start_lat, start_lon = self._extract_start_lat_lon_from_sequence(vessel_id)
         local_score = 1.0
         if start_lat is not None and start_lon is not None:
             cell_key = self._cell_key(start_lat, start_lon)
             local_idx = self._grid_index.get(cell_key, [])
             if local_idx:
                 local_bank = self._global_bank[np.asarray(local_idx, dtype=int)]
-                local_score = self._knn_score(local_bank, query)
+                local_index = self._local_faiss_cache.get(cell_key)
+                if self.use_faiss and local_index is None:
+                    local_index, _ = _build_faiss_index(local_bank, index_type="auto", hnsw_m=32, hnsw_ef_search=64)
+                    self._local_faiss_cache[cell_key] = local_index
+                local_score = self._knn_score(local_bank, query, local_index)
 
-        vessel_id = str(feature_event.get("vessel_id", ""))
-        vessel_type = str(features.get("vessel_type") or feature_event.get("vessel_type") or "Unknown").strip() or "Unknown"
+        vessel_type = str(current_observation.get("vessel_type") or feature_event.get("vessel_type") or "Unknown").strip() or "Unknown"
 
         vessel_score = 0.0
         if vessel_id in self._vessel_stats:
@@ -356,14 +287,22 @@ class AISRealtimeMemoryBankModel:
             cohort_idx = self._vessel_type_index[vessel_type]
             if cohort_idx:
                 cohort_bank = self._global_bank[np.asarray(cohort_idx, dtype=int)]
-                vessel_score = self._knn_score(cohort_bank, query)
+                cohort_index = self._cohort_faiss_cache.get(vessel_type)
+                if self.use_faiss and cohort_index is None:
+                    cohort_index, _ = _build_faiss_index(cohort_bank, index_type="auto", hnsw_m=32, hnsw_ef_search=64)
+                    self._cohort_faiss_cache[vessel_type] = cohort_index
+                vessel_score = self._knn_score(cohort_bank, query, cohort_index)
 
         physics_score = self._physics_penalty(sequence)
         combined = 0.2 * physics_score + 0.4 * global_score + 0.2 * local_score + 0.2 * vessel_score
-        label = "anomalous" if combined >= self.score_threshold else "normal"
+
+        score_buffer = self._get_score_buffer(vessel_id)
+        score_buffer.append(float(combined))
+        smoothed_score = float(np.mean(score_buffer))
+        label = "anomalous" if smoothed_score >= self.score_threshold else "normal"
 
         return ModelScore(
-            score=float(min(max(combined, 0.0), 1.0)),
+            score=float(min(max(smoothed_score, 0.0), 1.0)),
             label=label,
             metadata={
                 "model_mode": "realtime_memory_bank",
@@ -371,66 +310,77 @@ class AISRealtimeMemoryBankModel:
                 "local_score": float(local_score),
                 "vessel_score": float(vessel_score),
                 "physics_score": float(physics_score),
+                "raw_combined_score": float(combined),
+                "smoothed_score": float(smoothed_score),
                 "vessel_type": vessel_type,
                 "window_points": int(sequence.shape[0]),
+                "score_buffer_len": int(len(score_buffer)),
             },
         )
 
     def _encode_sequence(self, sequence: np.ndarray) -> np.ndarray:
         assert self._encoder is not None and self._max_len is not None
+        start = time.perf_counter()
         x, m = _pad(sequence, self._max_len)
         xt = torch.from_numpy(x).unsqueeze(0).to(self._device)
         mt = torch.from_numpy(m).unsqueeze(0).to(self._device)
         with torch.no_grad():
             emb = self._encoder(xt, mt).cpu().numpy()[0]
+        if self._device.type == "cuda":
+            torch.cuda.synchronize()
+        elapsed = time.perf_counter() - start
+        self._encode_latency_total_sec += elapsed
+        self._encode_latency_count += 1
+        if self._encode_latency_count % 500 == 0:
+            avg_latency = self._encode_latency_total_sec / self._encode_latency_count
+            logger.info(
+                "realtime_encode_latency avg_sec=%.6f samples=%d device=%s",
+                avg_latency,
+                self._encode_latency_count,
+                self._device.type,
+            )
         return _l2_normalize(emb.reshape(1, -1))[0]
 
-    def _knn_score(self, bank: np.ndarray, query: np.ndarray) -> float:
-        if self.use_faiss and self._global_index is not None and bank is self._global_bank:
-            return float(_faiss_mean_knn_distance(self._global_index, query.reshape(1, -1), self.k_neighbors)[0])
+    def _knn_score(self, bank: np.ndarray, query: np.ndarray, faiss_index: object | None = None) -> float:
+        if self.use_faiss and faiss_index is not None:
+            return float(_faiss_mean_knn_distance(faiss_index, query.reshape(1, -1), self.k_neighbors)[0])
         return float(_numpy_mean_knn_distance(bank, query.reshape(1, -1), self.k_neighbors)[0])
 
-    def _build_live_sequence(self, features: Dict[str, Any]) -> np.ndarray:
-        trajectory = features.get("trajectory_window") or []
-        timestamps = features.get("timestamp_window") or []
-        speeds = features.get("speed_window_knots") or []
-        headings = features.get("heading_window_deg") or []
-        cogs = features.get("cog_window_deg") or []
-        length_m = float(features.get("length_m") or 1.0)
-
-        points = min(len(trajectory), len(timestamps))
-        if points == 0:
-            return np.empty((0, 10), dtype=np.float32)
+    def _build_live_sequence(self, vessel_id: str) -> np.ndarray:
+        buffer = self._trajectory_buffers.get(vessel_id)
+        if not buffer or len(buffer) < 2:
+            return np.empty((0, len(LIVE_FEATURE_COLUMNS)), dtype=np.float32)
 
         rows: list[list[float]] = []
-        for idx in range(points):
-            curr = trajectory[idx] or {}
-            curr_lat = float(curr.get("lat", np.nan)) if isinstance(curr, dict) else np.nan
-            curr_lon = float(curr.get("lon", np.nan)) if isinstance(curr, dict) else np.nan
-            curr_ts = str(timestamps[idx])
-            curr_speed = float(speeds[idx]) if idx < len(speeds) and speeds[idx] is not None else 0.0
-            curr_heading = float(headings[idx]) if idx < len(headings) and headings[idx] is not None else 0.0
-            curr_cog = float(cogs[idx]) if idx < len(cogs) and cogs[idx] is not None else curr_heading
+        observations = list(buffer)
+        for idx, current in enumerate(observations):
+            curr_lat = float(current.get("lat", np.nan))
+            curr_lon = float(current.get("lon", np.nan))
+            curr_ts = str(current.get("timestamp", ""))
+            curr_speed = float(current.get("speed_knots", 0.0) or 0.0)
+            curr_heading = float(current.get("heading_deg", 0.0) or 0.0)
+            curr_cog = float(current.get("cog_deg", curr_heading) or curr_heading)
+            curr_length = float(current.get("length_m", 1.0) or 1.0)
 
             if idx == 0:
                 distance_km = 0.0
                 accel = 0.0
                 turn_rate = 0.0
             else:
-                prev = trajectory[idx - 1] or {}
-                prev_lat = float(prev.get("lat", np.nan)) if isinstance(prev, dict) else np.nan
-                prev_lon = float(prev.get("lon", np.nan)) if isinstance(prev, dict) else np.nan
-                prev_ts = str(timestamps[idx - 1])
-                prev_speed = float(speeds[idx - 1]) if idx - 1 < len(speeds) and speeds[idx - 1] is not None else curr_speed
-                prev_cog = float(cogs[idx - 1]) if idx - 1 < len(cogs) and cogs[idx - 1] is not None else curr_cog
+                prev = observations[idx - 1]
+                prev_lat = float(prev.get("lat", np.nan))
+                prev_lon = float(prev.get("lon", np.nan))
+                prev_ts = str(prev.get("timestamp", ""))
+                prev_speed = float(prev.get("speed_knots", curr_speed) or curr_speed)
+                prev_cog = float(prev.get("cog_deg", curr_cog) or curr_cog)
                 distance_km = _haversine_km(prev_lat, prev_lon, curr_lat, curr_lon) if np.isfinite(prev_lat) and np.isfinite(prev_lon) and np.isfinite(curr_lat) and np.isfinite(curr_lon) else 0.0
                 dt_sec = _seconds_between(prev_ts, curr_ts) or 0.0
                 accel = (curr_speed - prev_speed) / dt_sec if dt_sec > 0 else 0.0
                 turn_rate = _angle_diff_deg(prev_cog, curr_cog) / dt_sec if dt_sec > 0 else 0.0
 
-            time_of_day_sin, time_of_day_cos = _time_of_day_encoding(curr_ts)
+            tod_sin, tod_cos = _time_of_day_encoding(curr_ts)
             heading_cog_diff = _angle_diff_deg(curr_heading, curr_cog)
-            norm_speed = curr_speed / max(length_m, 1.0)
+            norm_speed = curr_speed / max(curr_length, 1.0)
 
             rows.append(
                 [
@@ -439,27 +389,80 @@ class AISRealtimeMemoryBankModel:
                     turn_rate,
                     heading_cog_diff,
                     norm_speed,
-                    time_of_day_sin,
-                    time_of_day_cos,
+                    tod_sin,
+                    tod_cos,
                     np.sin(np.radians(curr_cog)),
                     np.cos(np.radians(curr_cog)),
                     distance_km,
                 ]
             )
 
-        return np.asarray(rows, dtype=np.float32)
+        sequence = np.asarray(rows, dtype=np.float32)
+        if sequence.ndim != 2 or sequence.shape[1] != len(LIVE_FEATURE_COLUMNS):
+            logger.warning(
+                "live_feature_schema_mismatch vessel_id=%s actual_shape=%s expected_columns=%d",
+                vessel_id,
+                tuple(sequence.shape),
+                len(LIVE_FEATURE_COLUMNS),
+            )
+            return np.empty((0, len(LIVE_FEATURE_COLUMNS)), dtype=np.float32)
+        return sequence
 
-    def _extract_start_lat_lon(self, features: Dict[str, Any]) -> Tuple[Optional[float], Optional[float]]:
-        trajectory = features.get("trajectory_window") or []
-        if not trajectory:
+    def _extract_start_lat_lon_from_sequence(self, vessel_id: str) -> Tuple[Optional[float], Optional[float]]:
+        buffer = self._trajectory_buffers.get(vessel_id)
+        if not buffer:
             return None, None
-        first = trajectory[0] or {}
-        if not isinstance(first, dict):
+        first = next(iter(buffer), None)
+        if not first:
             return None, None
         try:
             return float(first.get("lat")), float(first.get("lon"))
         except (TypeError, ValueError):
             return None, None
+
+    def _get_trajectory_buffer(self, vessel_id: str) -> Deque[Dict[str, Any]]:
+        buffer = self._trajectory_buffers.get(vessel_id)
+        if buffer is None:
+            buffer = deque(maxlen=self.trajectory_window_size)
+            self._trajectory_buffers[vessel_id] = buffer
+        return buffer
+
+    def _get_score_buffer(self, vessel_id: str) -> Deque[float]:
+        buffer = self._score_buffers.get(vessel_id)
+        if buffer is None:
+            buffer = deque(maxlen=self.score_smoothing_window_size)
+            self._score_buffers[vessel_id] = buffer
+        return buffer
+
+    def _append_observation(self, vessel_id: str, observation: Dict[str, Any]) -> None:
+        buffer = self._get_trajectory_buffer(vessel_id)
+        buffer.append(observation)
+
+    def _extract_current_observation(self, feature_event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        features = feature_event.get("features", {}) if isinstance(feature_event.get("features"), dict) else {}
+
+        lat = _to_float(feature_event.get("lat", features.get("lat")), None)
+        lon = _to_float(feature_event.get("lon", features.get("lon")), None)
+        timestamp = feature_event.get("timestamp") or features.get("timestamp")
+        if lat is None or lon is None or timestamp is None:
+            return None
+
+        speed = _to_float(features.get("speed_knots", feature_event.get("speed_knots")), 0.0)
+        heading = _to_float(features.get("heading_deg", feature_event.get("heading_deg")), 0.0)
+        cog = _to_float(features.get("cog_deg", feature_event.get("cog_deg", heading)), heading)
+        length_m = _to_float(features.get("length_m", feature_event.get("length_m")), 1.0)
+        vessel_type = feature_event.get("vessel_type") or features.get("vessel_type") or "Unknown"
+
+        return {
+            "lat": float(lat),
+            "lon": float(lon),
+            "timestamp": str(timestamp),
+            "speed_knots": float(speed if speed is not None else 0.0),
+            "heading_deg": float(heading if heading is not None else 0.0),
+            "cog_deg": float(cog if cog is not None else heading if heading is not None else 0.0),
+            "length_m": float(length_m if length_m is not None else 1.0),
+            "vessel_type": str(vessel_type),
+        }
 
     def _cell_key(self, lat: float, lon: float) -> str:
         return f"{int(np.floor(lat))}_{int(np.floor(lon))}"

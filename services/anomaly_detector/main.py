@@ -68,6 +68,8 @@ def run() -> None:
         score_threshold=cfg.anomaly_score_threshold,
         k_neighbors=cfg.realtime_k_neighbors,
         min_window_points=cfg.realtime_min_window_points,
+        trajectory_window_size=cfg.realtime_trajectory_window_size,
+        score_smoothing_window_size=cfg.realtime_score_smoothing_window_size,
         use_faiss=cfg.realtime_use_faiss,
     )
 

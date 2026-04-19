@@ -60,13 +60,14 @@ Implemented in:
 
 Scope:
 
-1. Reuse exact preprocessing pipeline for new AIS data.
-2. Encode each voyage sequence.
-3. Compute combined anomaly score from:
-   - physics-rule penalties
-   - global/local memory nearest-neighbor distance
-   - per-vessel historical deviation after burn-in
-4. Flag anomalies using adaptive threshold.
+1. Reuse exact preprocessing pipeline to generate the offline memory bank artifacts once.
+2. Keep realtime scoring in `services/anomaly_detector` using the trained encoder + memory bank.
+3. Compute realtime anomaly score from:
+   - global memory nearest-neighbor distance
+   - optional local grid-cell similarity
+   - optional vessel-specific baseline or vessel-type cohort similarity
+   - lightweight physics penalties
+4. Flag anomalies continuously as Kafka AIS messages arrive.
 
 ## Suggested Run Order
 
@@ -78,7 +79,9 @@ Scope:
    `python -m preprocessing.ais_contrastive_train --sequences-path preprocessing/outputs/ais_sequences/voyage_sequences.npz --output-dir preprocessing/outputs/ais_model`
 4. Build the memory bank:
    `python -m preprocessing.ais_memory_bank --sequences-path preprocessing/outputs/ais_sequences/voyage_sequences.npz --metadata-path preprocessing/outputs/ais_sequences/voyage_metadata.parquet --checkpoint preprocessing/outputs/ais_model/encoder.pt --output-dir preprocessing/outputs/ais_memory`
-5. Run inference:
-   `python -m preprocessing.ais_inference --input-glob "../data/processed/day=*/ais_data.parquet" --checkpoint preprocessing/outputs/ais_model/encoder.pt --memory-dir preprocessing/outputs/ais_memory --output-file preprocessing/outputs/ais_inference/anomaly_scores.parquet`
-6. Visualize embeddings after training:
-   `python -m preprocessing.ais_visualize_embeddings --sequences-path preprocessing/outputs/ais_sequences/voyage_sequences.npz --checkpoint preprocessing/outputs/ais_model/encoder.pt --scores-path preprocessing/outputs/ais_inference/anomaly_scores.parquet --output-file preprocessing/outputs/ais_visuals/embeddings_tsne.png --method tsne`
+5. Start the realtime stream processor:
+   `python -m services.stream_processor.main`
+6. Start the realtime anomaly detector:
+   `python -m services.anomaly_detector.main`
+7. Visualize embeddings after training if you want offline inspection only:
+   `python -m preprocessing.ais_visualize_embeddings --sequences-path preprocessing/outputs/ais_sequences/voyage_sequences.npz --checkpoint preprocessing/outputs/ais_model/encoder.pt --output-file preprocessing/outputs/ais_visuals/embeddings_tsne.png --method tsne`
