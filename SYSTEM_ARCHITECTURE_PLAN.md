@@ -147,15 +147,15 @@ Consumes:
 
 - `ais.features.vessel_tracks`
 
-Phase 1 (model-based placeholder):
+Phase 1 (AIS inference integrated):
 
-1. Run model inference on feature vectors from `ais.features.vessel_tracks`
+1. Load anomaly scores from `preprocessing/ais_inference.py` output parquet
 2. Emit anomalies when model score exceeds threshold
 3. Include model metadata in events
 
-Initial model placeholder name:
+Current model name:
 
-- `IsolationForest-Placeholder-v0`
+- `AIS-Contrastive-Encoder-v1`
 
 Publishes:
 
@@ -174,7 +174,7 @@ Event schema:
    "anomaly_type": "model_detected",
   "score": 0.0,
    "model": {
-      "name": "IsolationForest-Placeholder-v0",
+      "name": "AIS-Contrastive-Encoder-v1",
       "label": "anomalous"
    },
   "features": {}

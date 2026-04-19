@@ -38,13 +38,13 @@ Goal:
 Scope:
 
 1. Consume `ais.features.vessel_tracks`
-2. Model inference on vessel feature vectors (placeholder model for now)
+2. Score events using nearest-match lookup from `preprocessing/ais_inference.py` output parquet
 3. Publish `ais.anomalies.events` with score and anomaly metadata
 4. Add deterministic event IDs for idempotency
 
-Initial model placeholder:
+Current model:
 
-- `IsolationForest-Placeholder-v0`
+- `AIS-Contrastive-Encoder-v1`
 
 Exit criteria:
 
