@@ -28,3 +28,4 @@ albumentations
 PyYAML
 scikit-image
 matplotlib
+faiss-cpu
