@@ -204,3 +204,4 @@ airflow.log
 
 stitch-skillsdatasets_sliced/
 /datasets_sliced/
+outputs/
