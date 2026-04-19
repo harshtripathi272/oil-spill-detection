@@ -122,6 +122,28 @@ def run() -> None:
 
                 vessel_id = cleaned["vessel_id"]
                 vessel_state = state.get_state(vessel_id)
+                prev_ts = None
+                if vessel_state.get("timestamps"):
+                    prev_ts = vessel_state["timestamps"][-1]
+
+                current_ts = cleaned["timestamp"]
+                reset_voyage = False
+                if prev_ts:
+                    try:
+                        from datetime import datetime
+
+                        prev_dt = datetime.fromisoformat(str(prev_ts).replace("Z", "+00:00"))
+                        curr_dt = datetime.fromisoformat(str(current_ts).replace("Z", "+00:00"))
+                        gap_hours = max((curr_dt - prev_dt).total_seconds(), 0.0) / 3600.0
+                        reset_voyage = gap_hours > cfg.voyage_gap_hours
+                    except Exception:
+                        reset_voyage = False
+
+                if reset_voyage:
+                    for key in vessel_state:
+                        if hasattr(vessel_state[key], "clear"):
+                            vessel_state[key].clear()
+
                 feature_event = build_feature_event(cleaned, vessel_state)
                 state.put_state(vessel_id, vessel_state)
 

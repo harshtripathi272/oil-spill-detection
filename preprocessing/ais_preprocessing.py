@@ -312,10 +312,14 @@ def build_sequence_dataset(df: pd.DataFrame, output_dir: Path) -> None:
 
         sequence_list.append(arr)
 
+        vessel_type_val = g["vessel_type"].iloc[0]
+        vessel_type_str = str(vessel_type_val).strip() if pd.notna(vessel_type_val) else "Unknown"
+
         metadata_rows.append(
             {
                 "voyage_id": voyage_id,
                 "mmsi": str(g["mmsi"].iloc[0]),
+                "vessel_type": vessel_type_str,
                 "start_timestamp": g["timestamp"].iloc[0],
                 "end_timestamp": g["timestamp"].iloc[-1],
                 "duration_sec": (g["timestamp"].iloc[-1] - g["timestamp"].iloc[0]).total_seconds(),

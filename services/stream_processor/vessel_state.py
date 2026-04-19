@@ -85,6 +85,7 @@ def _empty_state(window_size: int) -> Dict[str, Any]:
         "timestamps": deque(maxlen=window_size),
         "speeds_knots": deque(maxlen=window_size),
         "headings_deg": deque(maxlen=window_size),
+        "cogs_deg": deque(maxlen=window_size),
     }
 
 
@@ -102,4 +103,5 @@ def _serialize_state(state: Dict[str, Any]) -> Dict[str, List[Any]]:
         "timestamps": list(state.get("timestamps", [])),
         "speeds_knots": list(state.get("speeds_knots", [])),
         "headings_deg": list(state.get("headings_deg", [])),
+        "cogs_deg": list(state.get("cogs_deg", [])),
     }

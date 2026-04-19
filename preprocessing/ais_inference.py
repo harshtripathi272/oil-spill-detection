@@ -176,6 +176,33 @@ def _physics_penalty(meta_row: pd.Series) -> float:
     return min(penalty, 1.0)
 
 
+def _vessel_type_cohort_score(
+    query_embedding: np.ndarray,
+    global_bank: np.ndarray,
+    vessel_type_indices: Dict[str, List[int]],
+    vessel_type: str,
+    k: int = 5,
+) -> float:
+    """
+    Compute anomaly score for unknown vessel using type-based cohort.
+    Returns mean KNN distance to other vessels of same type.
+    """
+    vtype_clean = str(vessel_type).strip() if pd.notna(vessel_type) else "Unknown"
+    cohort_idx = vessel_type_indices.get(vtype_clean, [])
+    
+    if not cohort_idx:
+        return 1.0  # fallback: no cohort found
+    
+    cohort_bank = global_bank[np.asarray(cohort_idx, dtype=int)]
+    q_norm = query_embedding.reshape(1, -1)
+    sims = q_norm @ cohort_bank.T
+    k_eff = max(1, min(int(k), int(cohort_bank.shape[0])))
+    topk = np.partition(sims, kth=sims.shape[1] - k_eff, axis=1)[:, -k_eff:]
+    d = np.sqrt(np.maximum(2.0 - 2.0 * topk, 0.0)).astype(np.float32, copy=False)
+    return float(d.mean())
+
+
+
 def run_inference(
     input_glob: str,
     checkpoint: Path,
@@ -211,6 +238,12 @@ def run_inference(
         with open(vs_path, "r", encoding="utf-8") as f:
             for item in json.load(f):
                 vessel_stats[str(item["mmsi"])] = item
+
+    vessel_type_index: Dict[str, List[int]] = {}
+    vt_path = memory_dir / "vessel_type_index.json"
+    if vt_path.exists():
+        with open(vt_path, "r", encoding="utf-8") as f:
+            vessel_type_index = json.load(f)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model, max_len = _load_model(checkpoint, device=device)
@@ -306,6 +339,9 @@ def run_inference(
         local_score = float(local_scores[i])
 
         vessel_id = str(row["mmsi"])
+        vessel_type = str(row.get("vessel_type", "Unknown")).strip()
+        
+        # Primary: MMSI-specific vessel score (for known vessels with history).
         vessel_score = 0.0
         if vessel_id in vessel_stats:
             stats = vessel_stats[vessel_id]
@@ -315,6 +351,10 @@ def run_inference(
                 var = np.clip(var, 1e-6, None)
                 z = (q - mean) / np.sqrt(var)
                 vessel_score = float(np.sqrt((z * z).mean()))
+        else:
+            # Fallback: vessel-type cohort score (for unknown vessels, use type-based anomaly detection).
+            if vessel_type_index:
+                vessel_score = _vessel_type_cohort_score(q, global_bank, vessel_type_index, vessel_type, k=cfg.k_neighbors)
 
         # Combined hierarchical score.
         combined = 0.2 * physics_score + 0.4 * global_score + 0.2 * local_score + 0.2 * vessel_score
@@ -323,6 +363,7 @@ def run_inference(
             {
                 "voyage_id": row["voyage_id"],
                 "mmsi": vessel_id,
+                "vessel_type": vessel_type,
                 "start_timestamp": row["start_timestamp"],
                 "duration_sec": float(row["duration_sec"]),
                 "physics_score": physics_score,

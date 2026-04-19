@@ -13,7 +13,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"
 
 from ingestion.ais_stream.dead_letter.invalid_messages import DeadLetterHandler
 from services.anomaly_detector.config import AnomalyDetectorConfig
-from services.anomaly_detector.model import AISInferenceScoreModel, build_anomaly_event
+from services.anomaly_detector.model import AISRealtimeMemoryBankModel, build_anomaly_event
 
 load_dotenv()
 
@@ -61,15 +61,19 @@ def _publish(producer: KafkaProducer, topic: str, payload: Dict[str, Any]) -> No
 
 def run() -> None:
     cfg = AnomalyDetectorConfig()
-    model = AISInferenceScoreModel(
+    model = AISRealtimeMemoryBankModel(
         model_name=cfg.model_name,
-        scores_path=cfg.ais_inference_scores_path,
-        score_match_window_sec=cfg.ais_score_match_window_sec,
-        reload_interval_sec=cfg.ais_scores_reload_sec,
+        checkpoint_path=cfg.encoder_checkpoint_path,
+        memory_dir=cfg.memory_dir,
+        score_threshold=cfg.anomaly_score_threshold,
+        k_neighbors=cfg.realtime_k_neighbors,
+        min_window_points=cfg.realtime_min_window_points,
+        use_faiss=cfg.realtime_use_faiss,
     )
 
     logger.info("Starting anomaly detector with model=%s", cfg.model_name)
-    logger.info("Using AIS inference scores: %s", cfg.ais_inference_scores_path)
+    logger.info("Using realtime checkpoint: %s", cfg.encoder_checkpoint_path)
+    logger.info("Using realtime memory bank: %s", cfg.memory_dir)
     logger.info("Kafka bootstrap=%s input=%s output=%s", cfg.kafka_bootstrap_servers, cfg.input_topic, cfg.output_topic)
 
     consumer = None

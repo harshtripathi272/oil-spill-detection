@@ -5,7 +5,7 @@
 ## 🚀 System Flow
 
 1.  **AIS Ingestion**: Real-time vessel data is consumed via WebSockets and streamed into a **Kafka** broker.
-2.  **Detection**: AIS anomaly detector consumes vessel-track features and maps them against `preprocessing/ais_inference.py` outputs (`anomaly_scores.parquet`) to emit suspicious vessel events.
+2.  **Detection**: AIS anomaly detector consumes vessel-track features, rebuilds the live voyage window, encodes it with the trained AIS encoder, and compares it against the saved memory bank to emit suspicious vessel events.
 3.  **Orchestration**: **Apache Airflow** manages the validation pipeline:
     -   **Event Trigger**: A suspicious event initiates the `suspicious_event_validation` DAG.
     -   **ROI Calculation**: The system defines a spatial buffer (Region of Interest) around the event coordinates.
@@ -100,7 +100,7 @@ AIS anomaly detector contract:
 
 - Input topic: `AIS_FEATURES_TOPIC` (`ais.features.vessel_tracks`)
 - Output topic: `AIS_ANOMALIES_TOPIC` (`ais.anomalies.events`)
-- Score source: nearest-match lookup in `AIS_INFERENCE_SCORES_PATH` using `(vessel_id, timestamp)`
+- Score source: realtime encoder inference against `AIS_ENCODER_CHECKPOINT_PATH` + `AIS_MEMORY_DIR`
 
 Example DAG trigger payload (`suspicious_event_validation`):
 
