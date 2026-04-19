@@ -40,9 +40,13 @@ def load_ais_parquets(input_glob: str) -> pd.DataFrame:
         raise FileNotFoundError(f"No AIS parquet files matched: {input_glob}")
 
     frames: List[pd.DataFrame] = []
-    for path in tqdm(paths, desc="Loading AIS parquet files", unit="file"):
+    running_rows = 0
+    bar = tqdm(paths, desc="Loading AIS parquet files", unit="file")
+    for path in bar:
         df = pd.read_parquet(path)
         df["source_file"] = str(path)
+        running_rows += len(df)
+        bar.set_postfix(rows=f"{running_rows:,}")
         frames.append(df)
 
     combined = pd.concat(frames, ignore_index=True)
@@ -308,10 +312,14 @@ def build_sequence_dataset(df: pd.DataFrame, output_dir: Path) -> None:
 
         sequence_list.append(arr)
 
+        vessel_type_val = g["vessel_type"].iloc[0]
+        vessel_type_str = str(vessel_type_val).strip() if pd.notna(vessel_type_val) else "Unknown"
+
         metadata_rows.append(
             {
                 "voyage_id": voyage_id,
                 "mmsi": str(g["mmsi"].iloc[0]),
+                "vessel_type": vessel_type_str,
                 "start_timestamp": g["timestamp"].iloc[0],
                 "end_timestamp": g["timestamp"].iloc[-1],
                 "duration_sec": (g["timestamp"].iloc[-1] - g["timestamp"].iloc[0]).total_seconds(),

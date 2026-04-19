@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -9,12 +10,8 @@ import numpy as np
 import pandas as pd
 import torch
 from sklearn.manifold import TSNE
+from sklearn.decomposition import PCA
 from tqdm import tqdm
-
-try:
-    import umap
-except ImportError:
-    umap = None
 
 from preprocessing.ais_contrastive_train import SequenceTransformerEncoder
 from preprocessing.ais_preprocessing import SEQUENCE_FEATURE_COLUMNS
@@ -54,6 +51,16 @@ def _load_sequences(sequences_path: Path) -> list[np.ndarray]:
     return [np.asarray(seq, dtype=np.float32) for seq in payload["sequences"].tolist()]
 
 
+def _load_embeddings(embeddings_path: Path) -> np.ndarray:
+    if not embeddings_path.exists():
+        raise FileNotFoundError(f"Embeddings file not found: {embeddings_path}")
+    emb = np.load(embeddings_path)
+    emb = np.asarray(emb, dtype=np.float32)
+    if emb.ndim != 2:
+        raise ValueError(f"Expected 2D embeddings array, got shape {emb.shape}")
+    return emb
+
+
 def _encode_sequences(model: SequenceTransformerEncoder, max_len: int, sequences: list[np.ndarray], device: torch.device) -> np.ndarray:
     embeddings = []
     with torch.no_grad():
@@ -68,9 +75,15 @@ def _encode_sequences(model: SequenceTransformerEncoder, max_len: int, sequences
 
 def _reduce_embeddings(embeddings: np.ndarray, method: str, perplexity: float, random_state: int) -> np.ndarray:
     if method == "umap":
-        if umap is None:
+        umap_spec = importlib.util.find_spec("umap")
+        if umap_spec is None:
             raise ImportError("umap-learn is not installed. Install it or use --method tsne.")
+        umap = importlib.import_module("umap")
         reducer = umap.UMAP(n_components=2, random_state=random_state)
+        return reducer.fit_transform(embeddings)
+
+    if method == "pca":
+        reducer = PCA(n_components=2, random_state=random_state)
         return reducer.fit_transform(embeddings)
 
     max_perplexity = max(5.0, min(perplexity, (len(embeddings) - 1) / 3.0))
@@ -131,14 +144,16 @@ def plot_embeddings(embeddings_2d: np.ndarray, labels: Optional[np.ndarray], out
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Visualize AIS embeddings with t-SNE or UMAP")
-    parser.add_argument("--sequences-path", type=Path, required=True)
-    parser.add_argument("--checkpoint", type=Path, required=True)
+    parser.add_argument("--embeddings-path", type=Path, default=None)
+    parser.add_argument("--sequences-path", type=Path, default=None)
+    parser.add_argument("--checkpoint", type=Path, default=None)
     parser.add_argument("--metadata-path", type=Path, default=None)
     parser.add_argument("--scores-path", type=Path, default=None)
     parser.add_argument("--label-column", type=str, default="vessel_type")
-    parser.add_argument("--method", type=str, choices=["tsne", "umap"], default="tsne")
+    parser.add_argument("--method", type=str, choices=["tsne", "pca", "umap"], default="tsne")
     parser.add_argument("--perplexity", type=float, default=30.0)
     parser.add_argument("--max-points", type=int, default=5000)
+    parser.add_argument("--sample-seed", type=int, default=42)
     parser.add_argument("--output-file", type=Path, default=Path("preprocessing/outputs/ais_visuals/embeddings.png"))
     parser.add_argument("--save-embeddings", type=Path, default=None)
     parser.add_argument("--title", type=str, default="AIS Embedding Space")
@@ -148,24 +163,33 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
-    sequences = _load_sequences(args.sequences_path)
-    if not sequences:
-        raise ValueError(f"No sequences found in {args.sequences_path}")
+    selected_idx: Optional[np.ndarray] = None
+    if args.embeddings_path is not None:
+        embeddings = _load_embeddings(args.embeddings_path)
+    else:
+        if args.sequences_path is None or args.checkpoint is None:
+            raise ValueError("Provide --embeddings-path, or provide both --sequences-path and --checkpoint.")
 
-    if len(sequences) > args.max_points:
-        rng = np.random.default_rng(42)
-        idx = np.sort(rng.choice(len(sequences), size=args.max_points, replace=False))
-        sequences = [sequences[i] for i in idx]
+        sequences = _load_sequences(args.sequences_path)
+        if not sequences:
+            raise ValueError(f"No sequences found in {args.sequences_path}")
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, max_len = _load_model(args.checkpoint, device=device)
-    embeddings = _encode_sequences(model, max_len=max_len, sequences=sequences, device=device)
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model, max_len = _load_model(args.checkpoint, device=device)
+        embeddings = _encode_sequences(model, max_len=max_len, sequences=sequences, device=device)
 
     if args.save_embeddings is not None:
         args.save_embeddings.parent.mkdir(parents=True, exist_ok=True)
         np.save(args.save_embeddings, embeddings)
 
+    if len(embeddings) > args.max_points:
+        rng = np.random.default_rng(args.sample_seed)
+        selected_idx = np.sort(rng.choice(len(embeddings), size=args.max_points, replace=False))
+        embeddings = embeddings[selected_idx]
+
     labels, _ = _load_labels(args.metadata_path, args.scores_path, args.label_column)
+    if labels is not None and selected_idx is not None:
+        labels = labels[selected_idx]
     if labels is not None and len(labels) != len(embeddings):
         raise ValueError(f"Label count ({len(labels)}) does not match embeddings count ({len(embeddings)})")
 

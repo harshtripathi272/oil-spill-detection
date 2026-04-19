@@ -37,7 +37,10 @@ def validate_and_normalize(raw_msg: Dict[str, Any]) -> Tuple[Optional[Dict[str, 
         return None, "Invalid timestamp format"
 
     heading = _extract_heading(raw_msg)
+    cog = _extract_cog(raw_msg)
     reported_speed = _extract_speed_knots(raw_msg)
+    length_m = _extract_length_m(raw_msg)
+    vessel_type = _extract_vessel_type(raw_msg)
 
     cleaned = {
         "schema_version": "1.0",
@@ -48,7 +51,10 @@ def validate_and_normalize(raw_msg: Dict[str, Any]) -> Tuple[Optional[Dict[str, 
         "lat": lat,
         "lon": lon,
         "heading_deg": heading,
+        "cog_deg": cog,
         "speed_knots_reported": reported_speed,
+        "length_m": length_m,
+        "vessel_type": vessel_type,
         "source": "ais.raw.position_reports",
         "raw": raw_msg,
     }
@@ -62,8 +68,11 @@ def build_feature_event(cleaned: Dict[str, Any], state: Dict[str, Any]) -> Dict[
     current_lat = cleaned["lat"]
     current_lon = cleaned["lon"]
     current_heading = cleaned.get("heading_deg")
+    current_cog = cleaned.get("cog_deg")
+    current_length_m = cleaned.get("length_m")
+    current_vessel_type = cleaned.get("vessel_type")
 
-    prev_lat, prev_lon, prev_ts, prev_speed, prev_heading = _last_observation(state)
+    prev_lat, prev_lon, prev_ts, prev_speed, prev_heading, prev_cog = _last_observation(state)
 
     computed_speed = None
     if prev_lat is not None and prev_lon is not None and prev_ts:
@@ -87,10 +96,16 @@ def build_feature_event(cleaned: Dict[str, Any], state: Dict[str, Any]) -> Dict[
         delta = _smallest_angle_delta(prev_heading, current_heading)
         heading_change_rate_deg_per_sec = delta / time_gap_sec
 
+    turn_rate_deg_per_sec = None
+    if current_cog is not None and prev_cog is not None and time_gap_sec and time_gap_sec > 0:
+        delta = _smallest_angle_delta(prev_cog, current_cog)
+        turn_rate_deg_per_sec = delta / time_gap_sec
+
     state["last_positions"].append({"lat": current_lat, "lon": current_lon})
     state["timestamps"].append(current_ts)
     state["speeds_knots"].append(speed_knots)
     state["headings_deg"].append(current_heading)
+    state["cogs_deg"].append(current_cog if current_cog is not None else current_heading)
 
     return {
         "schema_version": "1.0",
@@ -104,9 +119,17 @@ def build_feature_event(cleaned: Dict[str, Any], state: Dict[str, Any]) -> Dict[
             "speed_knots": speed_knots,
             "acceleration_knots_per_sec": acceleration_knots_per_sec,
             "heading_change_rate_deg_per_sec": heading_change_rate_deg_per_sec,
+            "turn_rate_deg_per_sec": turn_rate_deg_per_sec,
             "time_gap_sec": time_gap_sec,
+            "heading_deg": current_heading,
+            "cog_deg": current_cog if current_cog is not None else current_heading,
+            "length_m": current_length_m,
+            "vessel_type": current_vessel_type,
             "trajectory_window": list(state["last_positions"]),
             "timestamp_window": list(state["timestamps"]),
+            "speed_window_knots": list(state["speeds_knots"]),
+            "heading_window_deg": list(state["headings_deg"]),
+            "cog_window_deg": list(state["cogs_deg"]),
         },
         "source_event_id": cleaned["event_id"],
     }
@@ -176,6 +199,54 @@ def _extract_heading(msg: Dict[str, Any]) -> Optional[float]:
         return float(value) if value is not None else None
     except (TypeError, ValueError):
         return None
+
+
+def _extract_cog(msg: Dict[str, Any]) -> Optional[float]:
+    pr = _position_report_payload(msg)
+    value = None
+    if isinstance(pr, dict):
+        value = pr.get("Cog")
+        if value is None:
+            value = pr.get("COG")
+
+    try:
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_length_m(msg: Dict[str, Any]) -> Optional[float]:
+    metadata = msg.get("MetaData", {}) if isinstance(msg.get("MetaData"), dict) else {}
+    candidate_keys = ["length", "Length", "vessel_length_m", "ship_length_m"]
+    for key in candidate_keys:
+        value = metadata.get(key)
+        if value is not None:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                continue
+    return None
+
+
+def _extract_vessel_type(msg: Dict[str, Any]) -> Optional[str]:
+    metadata = msg.get("MetaData", {}) if isinstance(msg.get("MetaData"), dict) else {}
+    candidate_keys = ["vessel_type", "VesselType", "ship_type", "ShipType", "type"]
+    for key in candidate_keys:
+        value = metadata.get(key)
+        if value is not None:
+            text = str(value).strip()
+            if text and text.lower() not in {"nan", "none", "unknown"}:
+                return text
+
+    pr = _position_report_payload(msg)
+    if isinstance(pr, dict):
+        for key in candidate_keys:
+            value = pr.get(key)
+            if value is not None:
+                text = str(value).strip()
+                if text and text.lower() not in {"nan", "none", "unknown"}:
+                    return text
+    return None
 
 
 def _extract_speed_knots(msg: Dict[str, Any]) -> Optional[float]:
@@ -261,21 +332,23 @@ def _smallest_angle_delta(a: float, b: float) -> float:
     return delta
 
 
-def _last_observation(state: Dict[str, Any]) -> Tuple[Optional[float], Optional[float], Optional[str], Optional[float], Optional[float]]:
+def _last_observation(state: Dict[str, Any]) -> Tuple[Optional[float], Optional[float], Optional[str], Optional[float], Optional[float], Optional[float]]:
     last_positions = state.get("last_positions")
     timestamps = state.get("timestamps")
     speeds = state.get("speeds_knots")
     headings = state.get("headings_deg")
 
     if not last_positions or not timestamps:
-        return None, None, None, None, None
+        return None, None, None, None, None, None
 
     prev_pos = last_positions[-1]
     prev_ts = timestamps[-1]
     prev_speed = speeds[-1] if speeds else None
     prev_heading = headings[-1] if headings else None
+    cogs = state.get("cogs_deg")
+    prev_cog = cogs[-1] if cogs else None
 
-    return prev_pos.get("lat"), prev_pos.get("lon"), prev_ts, prev_speed, prev_heading
+    return prev_pos.get("lat"), prev_pos.get("lon"), prev_ts, prev_speed, prev_heading, prev_cog
 
 
 def _deterministic_id(vessel_id: str, timestamp: str, lat: float, lon: float, suffix: str = "cleaned") -> str:

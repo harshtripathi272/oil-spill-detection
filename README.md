@@ -5,7 +5,7 @@
 ## 🚀 System Flow
 
 1.  **AIS Ingestion**: Real-time vessel data is consumed via WebSockets and streamed into a **Kafka** broker.
-2.  **Detection**: Anomaly detection services (or manual triggers) identify suspicious vessel behavior (e.g., unusual stops, speed changes in protected zones).
+2.  **Detection**: AIS anomaly detector consumes vessel-track features, rebuilds the live voyage window, encodes it with the trained AIS encoder, and compares it against the saved memory bank to emit suspicious vessel events.
 3.  **Orchestration**: **Apache Airflow** manages the validation pipeline:
     -   **Event Trigger**: A suspicious event initiates the `suspicious_event_validation` DAG.
     -   **ROI Calculation**: The system defines a spatial buffer (Region of Interest) around the event coordinates.
@@ -66,6 +66,7 @@ Required environment variables:
 - `COPERNICUS_USER`: Copernicus/ESA username
 - `COPERNICUS_PASSWORD`: Copernicus/ESA password
 - `SAR_INFERENCE_CMD`: command template used by `SARInferenceOperator`
+- `AIS_INFERENCE_SCORES_PATH`: parquet produced by `python -m preprocessing.ais_inference` and consumed by `services/anomaly_detector`
 
 Local Airflow notes:
 
@@ -94,6 +95,12 @@ Airflow task integration contracts:
 - `search_sentinel` returns list of product objects, each including `product_id`
 - `download_sentinel` returns list of local downloaded file paths
 - `sar_inference` returns list of inference result objects
+
+AIS anomaly detector contract:
+
+- Input topic: `AIS_FEATURES_TOPIC` (`ais.features.vessel_tracks`)
+- Output topic: `AIS_ANOMALIES_TOPIC` (`ais.anomalies.events`)
+- Score source: realtime encoder inference against `AIS_ENCODER_CHECKPOINT_PATH` + `AIS_MEMORY_DIR`
 
 Example DAG trigger payload (`suspicious_event_validation`):
 

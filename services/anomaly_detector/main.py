@@ -13,7 +13,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"
 
 from ingestion.ais_stream.dead_letter.invalid_messages import DeadLetterHandler
 from services.anomaly_detector.config import AnomalyDetectorConfig
-from services.anomaly_detector.model import PlaceholderTrajectoryModel, build_anomaly_event
+from services.anomaly_detector.model import AISRealtimeMemoryBankModel, build_anomaly_event
 
 load_dotenv()
 
@@ -61,9 +61,19 @@ def _publish(producer: KafkaProducer, topic: str, payload: Dict[str, Any]) -> No
 
 def run() -> None:
     cfg = AnomalyDetectorConfig()
-    model = PlaceholderTrajectoryModel(model_name=cfg.model_name)
+    model = AISRealtimeMemoryBankModel(
+        model_name=cfg.model_name,
+        checkpoint_path=cfg.encoder_checkpoint_path,
+        memory_dir=cfg.memory_dir,
+        score_threshold=cfg.anomaly_score_threshold,
+        k_neighbors=cfg.realtime_k_neighbors,
+        min_window_points=cfg.realtime_min_window_points,
+        use_faiss=cfg.realtime_use_faiss,
+    )
 
     logger.info("Starting anomaly detector with model=%s", cfg.model_name)
+    logger.info("Using realtime checkpoint: %s", cfg.encoder_checkpoint_path)
+    logger.info("Using realtime memory bank: %s", cfg.memory_dir)
     logger.info("Kafka bootstrap=%s input=%s output=%s", cfg.kafka_bootstrap_servers, cfg.input_topic, cfg.output_topic)
 
     consumer = None
@@ -110,12 +120,7 @@ def run() -> None:
                     )
                     continue
 
-                if cfg.placeholder_force_emit:
-                    anomaly_event["score"] = cfg.placeholder_forced_score
-                    anomaly_event["anomaly_type"] = cfg.placeholder_anomaly_type
-                    if isinstance(anomaly_event.get("model"), dict):
-                        anomaly_event["model"]["label"] = "anomalous"
-                elif model_score.score < cfg.anomaly_score_threshold:
+                if model_score.score < cfg.anomaly_score_threshold:
                     discarded += 1
                     continue
 

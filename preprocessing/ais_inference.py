@@ -11,6 +11,14 @@ import pandas as pd
 import torch
 from tqdm import tqdm
 
+try:
+    import faiss
+
+    FAISS_AVAILABLE = True
+except ImportError:
+    faiss = None
+    FAISS_AVAILABLE = False
+
 from preprocessing.ais_contrastive_train import SequenceTransformerEncoder
 from preprocessing.ais_preprocessing import (
     AISPreprocessConfig,
@@ -29,6 +37,13 @@ class InferenceConfig:
     burn_in_hours: float = 24.0
     score_threshold: float = 0.8
     k_neighbors: int = 5
+    embedding_batch_size: int = 256
+    use_faiss: bool = True
+    faiss_index_type: str = "auto"
+    faiss_hnsw_m: int = 32
+    faiss_hnsw_ef_search: int = 64
+    faiss_write_index: bool = False
+    faiss_index_path: Path | None = None
 
 
 def _load_model(checkpoint: Path, device: torch.device) -> Tuple[SequenceTransformerEncoder, int]:
@@ -58,24 +73,96 @@ def _pad(seq: np.ndarray, max_len: int) -> Tuple[np.ndarray, np.ndarray]:
     return x, m
 
 
-def _encode_sequences(model: SequenceTransformerEncoder, max_len: int, sequences: List[np.ndarray], device: torch.device) -> np.ndarray:
-    out = []
+def _l2_normalize(arr: np.ndarray, eps: float = 1e-12) -> np.ndarray:
+    arr = np.asarray(arr, dtype=np.float32)
+    norms = np.linalg.norm(arr, axis=1, keepdims=True)
+    norms = np.maximum(norms, eps)
+    return arr / norms
+
+
+def _encode_sequences(
+    model: SequenceTransformerEncoder,
+    max_len: int,
+    sequences: List[np.ndarray],
+    device: torch.device,
+    batch_size: int,
+) -> np.ndarray:
+    out: list[np.ndarray] = []
     with torch.no_grad():
-        for seq in tqdm(sequences, desc="Encoding inference sequences", unit="voyage"):
-            x, m = _pad(np.asarray(seq, dtype=np.float32), max_len)
-            xt = torch.from_numpy(x).unsqueeze(0).to(device)
-            mt = torch.from_numpy(m).unsqueeze(0).to(device)
-            z = model(xt, mt).cpu().numpy()[0]
-            out.append(z)
-    return np.asarray(out, dtype=np.float32)
+        total = len(sequences)
+        for start in tqdm(range(0, total, max(1, batch_size)), desc="Encoding inference sequences", unit="batch"):
+            chunk = sequences[start : start + max(1, batch_size)]
+            xs, ms = [], []
+            for seq in chunk:
+                x, m = _pad(np.asarray(seq, dtype=np.float32), max_len)
+                xs.append(x)
+                ms.append(m)
+            xt = torch.from_numpy(np.stack(xs, axis=0)).to(device)
+            mt = torch.from_numpy(np.stack(ms, axis=0)).to(device)
+            z = model(xt, mt).cpu().numpy()
+            out.append(np.asarray(z, dtype=np.float32))
+    if not out:
+        return np.empty((0, 0), dtype=np.float32)
+    return np.concatenate(out, axis=0)
 
 
-def _knn_distance(query: np.ndarray, bank: np.ndarray, k: int) -> float:
+def _build_faiss_index(
+    bank: np.ndarray,
+    index_type: str,
+    hnsw_m: int,
+    hnsw_ef_search: int,
+) -> tuple[object, str]:
+    if not FAISS_AVAILABLE:
+        raise RuntimeError("FAISS is not available")
+    if bank.ndim != 2 or bank.shape[0] == 0:
+        raise ValueError("Cannot build FAISS index for empty bank")
+
+    n, d = int(bank.shape[0]), int(bank.shape[1])
+    chosen = index_type
+    if index_type == "auto":
+        chosen = "hnsw" if n >= 400_000 else "flat"
+
+    if chosen == "hnsw":
+        index = faiss.IndexHNSWFlat(d, int(hnsw_m), faiss.METRIC_L2)
+        index.hnsw.efSearch = int(hnsw_ef_search)
+    else:
+        index = faiss.IndexFlatL2(d)
+
+    index.add(bank.astype(np.float32, copy=False))
+    return index, chosen
+
+
+def _faiss_mean_knn_distance(index: object, queries: np.ndarray, k: int) -> np.ndarray:
+    if queries.size == 0:
+        return np.empty((0,), dtype=np.float32)
+    ntotal = int(index.ntotal)
+    if ntotal == 0:
+        return np.ones((queries.shape[0],), dtype=np.float32)
+
+    k_eff = max(1, min(int(k), ntotal))
+    d2, idx = index.search(queries.astype(np.float32, copy=False), k_eff)
+    d = np.sqrt(np.maximum(d2, 0.0)).astype(np.float32, copy=False)
+
+    valid = idx >= 0
+    count = np.maximum(valid.sum(axis=1), 1)
+    summed = (d * valid).sum(axis=1)
+    out = summed / count
+    out[count == 0] = 1.0
+    return out.astype(np.float32, copy=False)
+
+
+def _numpy_mean_knn_distance(bank: np.ndarray, queries: np.ndarray, k: int) -> np.ndarray:
+    if queries.size == 0:
+        return np.empty((0,), dtype=np.float32)
     if bank.size == 0:
-        return 1.0
-    d = np.linalg.norm(bank - query[None, :], axis=1)
-    k = max(1, min(k, len(d)))
-    return float(np.partition(d, k - 1)[:k].mean())
+        return np.ones((queries.shape[0],), dtype=np.float32)
+
+    # Embeddings are normalized, so L2 distance can be computed from cosine similarity.
+    sims = queries @ bank.T
+    k_eff = max(1, min(int(k), int(bank.shape[0])))
+    topk = np.partition(sims, kth=sims.shape[1] - k_eff, axis=1)[:, -k_eff:]
+    d = np.sqrt(np.maximum(2.0 - 2.0 * topk, 0.0)).astype(np.float32, copy=False)
+    return d.mean(axis=1).astype(np.float32, copy=False)
 
 
 def _physics_penalty(meta_row: pd.Series) -> float:
@@ -87,6 +174,33 @@ def _physics_penalty(meta_row: pd.Series) -> float:
     if float(meta_row.get("n_steps", 0)) < 4:
         penalty += 0.6
     return min(penalty, 1.0)
+
+
+def _vessel_type_cohort_score(
+    query_embedding: np.ndarray,
+    global_bank: np.ndarray,
+    vessel_type_indices: Dict[str, List[int]],
+    vessel_type: str,
+    k: int = 5,
+) -> float:
+    """
+    Compute anomaly score for unknown vessel using type-based cohort.
+    Returns mean KNN distance to other vessels of same type.
+    """
+    vtype_clean = str(vessel_type).strip() if pd.notna(vessel_type) else "Unknown"
+    cohort_idx = vessel_type_indices.get(vtype_clean, [])
+    
+    if not cohort_idx:
+        return 1.0  # fallback: no cohort found
+    
+    cohort_bank = global_bank[np.asarray(cohort_idx, dtype=int)]
+    q_norm = query_embedding.reshape(1, -1)
+    sims = q_norm @ cohort_bank.T
+    k_eff = max(1, min(int(k), int(cohort_bank.shape[0])))
+    topk = np.partition(sims, kth=sims.shape[1] - k_eff, axis=1)[:, -k_eff:]
+    d = np.sqrt(np.maximum(2.0 - 2.0 * topk, 0.0)).astype(np.float32, copy=False)
+    return float(d.mean())
+
 
 
 def run_inference(
@@ -113,7 +227,8 @@ def run_inference(
 
     if not memory_dir.exists():
         raise FileNotFoundError(f"Memory directory not found: {memory_dir}")
-    global_bank = np.load(memory_dir / "global_embeddings.npy")
+    global_bank = np.load(memory_dir / "global_embeddings.npy").astype(np.float32, copy=False)
+    global_bank = _l2_normalize(global_bank)
     with open(memory_dir / "grid_memory_index.json", "r", encoding="utf-8") as f:
         grid_index = json.load(f)
 
@@ -124,25 +239,109 @@ def run_inference(
             for item in json.load(f):
                 vessel_stats[str(item["mmsi"])] = item
 
+    vessel_type_index: Dict[str, List[int]] = {}
+    vt_path = memory_dir / "vessel_type_index.json"
+    if vt_path.exists():
+        with open(vt_path, "r", encoding="utf-8") as f:
+            vessel_type_index = json.load(f)
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model, max_len = _load_model(checkpoint, device=device)
-    emb = _encode_sequences(model, max_len=max_len, sequences=sequences, device=device)
+    emb = _encode_sequences(
+        model,
+        max_len=max_len,
+        sequences=sequences,
+        device=device,
+        batch_size=max(1, cfg.embedding_batch_size),
+    )
+    emb = _l2_normalize(emb)
+
+    use_faiss = cfg.use_faiss and FAISS_AVAILABLE
+    if cfg.use_faiss and not FAISS_AVAILABLE:
+        print("FAISS unavailable; falling back to NumPy KNN search.")
+
+    global_index = None
+    if use_faiss:
+        index_path = cfg.faiss_index_path
+        if index_path is None and cfg.faiss_write_index:
+            index_path = memory_dir / "global_embeddings.faiss"
+
+        if index_path is not None and index_path.exists():
+            try:
+                global_index = faiss.read_index(str(index_path))
+                if int(global_index.ntotal) != int(global_bank.shape[0]):
+                    print("Stored FAISS index size mismatch. Rebuilding index from embeddings.")
+                    global_index = None
+            except Exception as exc:
+                print(f"Failed reading FAISS index from disk ({index_path}): {exc}. Rebuilding.")
+                global_index = None
+
+        if global_index is None:
+            global_index, chosen = _build_faiss_index(
+                global_bank,
+                index_type=cfg.faiss_index_type,
+                hnsw_m=cfg.faiss_hnsw_m,
+                hnsw_ef_search=cfg.faiss_hnsw_ef_search,
+            )
+            print(f"Built global FAISS index: type={chosen}, vectors={global_bank.shape[0]}")
+            if cfg.faiss_write_index:
+                persist_path = index_path if index_path is not None else (memory_dir / "global_embeddings.faiss")
+                faiss.write_index(global_index, str(persist_path))
+                print(f"Saved FAISS index to: {persist_path}")
+
+    if use_faiss and global_index is not None:
+        global_scores = _faiss_mean_knn_distance(global_index, emb, cfg.k_neighbors)
+    else:
+        global_scores = _numpy_mean_knn_distance(global_bank, emb, cfg.k_neighbors)
+
+    query_cell_keys: list[str] = []
+    cell_to_query_idx: dict[str, list[int]] = {}
+    for i, row in metadata.iterrows():
+        lat_bin = int(np.floor(float(row["start_lat"])))
+        lon_bin = int(np.floor(float(row["start_lon"])))
+        key = f"{lat_bin}_{lon_bin}"
+        query_cell_keys.append(key)
+        cell_to_query_idx.setdefault(key, []).append(i)
+
+    local_scores = np.ones((len(metadata),), dtype=np.float32)
+    local_index_cache: dict[str, object] = {}
+    local_bank_cache: dict[str, np.ndarray] = {}
+    for key, query_indices in tqdm(cell_to_query_idx.items(), desc="Scoring local memory", unit="cell"):
+        local_idx = grid_index.get(key, [])
+        if not local_idx:
+            continue
+
+        local_bank = global_bank[np.asarray(local_idx, dtype=int)]
+        q_batch = emb[np.asarray(query_indices, dtype=int)]
+
+        if use_faiss and global_index is not None:
+            if key not in local_index_cache:
+                local_index_cache[key], _ = _build_faiss_index(
+                    local_bank,
+                    index_type=cfg.faiss_index_type,
+                    hnsw_m=cfg.faiss_hnsw_m,
+                    hnsw_ef_search=cfg.faiss_hnsw_ef_search,
+                )
+            d = _faiss_mean_knn_distance(local_index_cache[key], q_batch, cfg.k_neighbors)
+        else:
+            if key not in local_bank_cache:
+                local_bank_cache[key] = local_bank
+            d = _numpy_mean_knn_distance(local_bank_cache[key], q_batch, cfg.k_neighbors)
+
+        local_scores[np.asarray(query_indices, dtype=int)] = d
 
     rows = []
     for i, row in metadata.iterrows():
         q = emb[i]
 
         physics_score = _physics_penalty(row)
-        global_score = _knn_distance(q, global_bank, cfg.k_neighbors)
-
-        lat_bin = int(np.floor(float(row["start_lat"])))
-        lon_bin = int(np.floor(float(row["start_lon"])))
-        key = f"{lat_bin}_{lon_bin}"
-        local_idx = grid_index.get(key, [])
-        local_bank = global_bank[np.asarray(local_idx, dtype=int)] if local_idx else np.empty((0, global_bank.shape[1]), dtype=np.float32)
-        local_score = _knn_distance(q, local_bank, cfg.k_neighbors)
+        global_score = float(global_scores[i])
+        local_score = float(local_scores[i])
 
         vessel_id = str(row["mmsi"])
+        vessel_type = str(row.get("vessel_type", "Unknown")).strip()
+        
+        # Primary: MMSI-specific vessel score (for known vessels with history).
         vessel_score = 0.0
         if vessel_id in vessel_stats:
             stats = vessel_stats[vessel_id]
@@ -152,6 +351,10 @@ def run_inference(
                 var = np.clip(var, 1e-6, None)
                 z = (q - mean) / np.sqrt(var)
                 vessel_score = float(np.sqrt((z * z).mean()))
+        else:
+            # Fallback: vessel-type cohort score (for unknown vessels, use type-based anomaly detection).
+            if vessel_type_index:
+                vessel_score = _vessel_type_cohort_score(q, global_bank, vessel_type_index, vessel_type, k=cfg.k_neighbors)
 
         # Combined hierarchical score.
         combined = 0.2 * physics_score + 0.4 * global_score + 0.2 * local_score + 0.2 * vessel_score
@@ -160,6 +363,7 @@ def run_inference(
             {
                 "voyage_id": row["voyage_id"],
                 "mmsi": vessel_id,
+                "vessel_type": vessel_type,
                 "start_timestamp": row["start_timestamp"],
                 "duration_sec": float(row["duration_sec"]),
                 "physics_score": physics_score,
@@ -186,6 +390,33 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--burn-in-hours", type=float, default=24.0)
     parser.add_argument("--score-threshold", type=float, default=0.8)
     parser.add_argument("--k-neighbors", type=int, default=5)
+    parser.add_argument("--embedding-batch-size", type=int, default=256)
+    parser.add_argument(
+        "--use-faiss",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Use FAISS for KNN search when available. Falls back to NumPy if unavailable.",
+    )
+    parser.add_argument(
+        "--faiss-index-type",
+        type=str,
+        choices=["auto", "flat", "hnsw"],
+        default="auto",
+        help="FAISS index type for global/local memory search.",
+    )
+    parser.add_argument("--faiss-hnsw-m", type=int, default=32)
+    parser.add_argument("--faiss-hnsw-ef-search", type=int, default=64)
+    parser.add_argument(
+        "--faiss-write-index",
+        action="store_true",
+        help="Persist global FAISS index to disk for faster startup.",
+    )
+    parser.add_argument(
+        "--faiss-index-path",
+        type=Path,
+        default=None,
+        help="Optional path to load/save global FAISS index.",
+    )
     return parser.parse_args()
 
 
@@ -195,6 +426,13 @@ def main() -> None:
         burn_in_hours=args.burn_in_hours,
         score_threshold=args.score_threshold,
         k_neighbors=args.k_neighbors,
+        embedding_batch_size=args.embedding_batch_size,
+        use_faiss=args.use_faiss,
+        faiss_index_type=args.faiss_index_type,
+        faiss_hnsw_m=args.faiss_hnsw_m,
+        faiss_hnsw_ef_search=args.faiss_hnsw_ef_search,
+        faiss_write_index=args.faiss_write_index,
+        faiss_index_path=args.faiss_index_path,
     )
     run_inference(
         input_glob=args.input_glob,
