@@ -125,11 +125,6 @@ def build_feature_event(cleaned: Dict[str, Any], state: Dict[str, Any]) -> Dict[
             "cog_deg": current_cog if current_cog is not None else current_heading,
             "length_m": current_length_m,
             "vessel_type": current_vessel_type,
-            "trajectory_window": list(state["last_positions"]),
-            "timestamp_window": list(state["timestamps"]),
-            "speed_window_knots": list(state["speeds_knots"]),
-            "heading_window_deg": list(state["headings_deg"]),
-            "cog_window_deg": list(state["cogs_deg"]),
         },
         "source_event_id": cleaned["event_id"],
     }

@@ -79,7 +79,11 @@ def run() -> None:
     filtered = 0
     invalid = 0
 
+    vessel_cooldowns: Dict[str, float] = {}
+    COOLDOWN_SEC = 2 * 3600  # 2 hours
+
     try:
+
         consumer = _build_consumer(cfg)
         producer = _build_producer(cfg)
         dlq = DeadLetterHandler(
@@ -110,6 +114,23 @@ def run() -> None:
                         logger.info("Filtered anomaly event: %s", reason)
                     continue
 
+                try:
+
+                    import time
+                    current_time = time.time()
+                    vessel_id = str(anomaly_event.get("vessel_id", ""))
+                    
+                    if processed % 100 == 0:
+                        vessel_cooldowns = {vid: ts for vid, ts in vessel_cooldowns.items() if current_time - ts < COOLDOWN_SEC}
+
+                    if vessel_id and vessel_id in vessel_cooldowns and (current_time - vessel_cooldowns[vessel_id] < COOLDOWN_SEC):
+                        filtered += 1
+                        continue
+                    if vessel_id:
+                        vessel_cooldowns[vessel_id] = current_time
+                except Exception:
+                    pass
+
                 trigger_event, err = build_trigger_event(anomaly_event)
                 if err:
                     invalid += 1
@@ -118,6 +139,7 @@ def run() -> None:
                         error_reason=f"trigger_bridge_validation: {err}",
                     )
                     continue
+
 
                 _publish(producer, cfg.output_topic, trigger_event)
                 forwarded += 1

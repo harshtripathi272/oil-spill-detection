@@ -352,35 +352,17 @@ class AISRealtimeMemoryBankModel:
             return np.empty((0, len(LIVE_FEATURE_COLUMNS)), dtype=np.float32)
 
         rows: list[list[float]] = []
-        observations = list(buffer)
-        for idx, current in enumerate(observations):
-            curr_lat = float(current.get("lat", np.nan))
-            curr_lon = float(current.get("lon", np.nan))
-            curr_ts = str(current.get("timestamp", ""))
+        for current in buffer:
             curr_speed = float(current.get("speed_knots", 0.0) or 0.0)
-            curr_heading = float(current.get("heading_deg", 0.0) or 0.0)
-            curr_cog = float(current.get("cog_deg", curr_heading) or curr_heading)
-            curr_length = float(current.get("length_m", 1.0) or 1.0)
-
-            if idx == 0:
-                distance_km = 0.0
-                accel = 0.0
-                turn_rate = 0.0
-            else:
-                prev = observations[idx - 1]
-                prev_lat = float(prev.get("lat", np.nan))
-                prev_lon = float(prev.get("lon", np.nan))
-                prev_ts = str(prev.get("timestamp", ""))
-                prev_speed = float(prev.get("speed_knots", curr_speed) or curr_speed)
-                prev_cog = float(prev.get("cog_deg", curr_cog) or curr_cog)
-                distance_km = _haversine_km(prev_lat, prev_lon, curr_lat, curr_lon) if np.isfinite(prev_lat) and np.isfinite(prev_lon) and np.isfinite(curr_lat) and np.isfinite(curr_lon) else 0.0
-                dt_sec = _seconds_between(prev_ts, curr_ts) or 0.0
-                accel = (curr_speed - prev_speed) / dt_sec if dt_sec > 0 else 0.0
-                turn_rate = _angle_diff_deg(prev_cog, curr_cog) / dt_sec if dt_sec > 0 else 0.0
-
-            tod_sin, tod_cos = _time_of_day_encoding(curr_ts)
-            heading_cog_diff = _angle_diff_deg(curr_heading, curr_cog)
-            norm_speed = curr_speed / max(curr_length, 1.0)
+            accel = float(current.get("acceleration_knots_per_sec", 0.0) or 0.0)
+            turn_rate = float(current.get("turn_rate_deg_per_sec", 0.0) or 0.0)
+            heading_cog_diff = float(current.get("heading_cog_diff_deg", 0.0) or 0.0)
+            norm_speed = float(current.get("norm_speed", 0.0) or 0.0)
+            tod_sin = float(current.get("tod_sin", 0.0) or 0.0)
+            tod_cos = float(current.get("tod_cos", 1.0) or 1.0)
+            cog_sin = float(current.get("cog_sin", 0.0) or 0.0)
+            cog_cos = float(current.get("cog_cos", 1.0) or 1.0)
+            distance_km = float(current.get("distance_km", 0.0) or 0.0)
 
             rows.append(
                 [
@@ -391,8 +373,8 @@ class AISRealtimeMemoryBankModel:
                     norm_speed,
                     tod_sin,
                     tod_cos,
-                    np.sin(np.radians(curr_cog)),
-                    np.cos(np.radians(curr_cog)),
+                    cog_sin,
+                    cog_cos,
                     distance_km,
                 ]
             )
@@ -453,17 +435,34 @@ class AISRealtimeMemoryBankModel:
         length_m = _to_float(features.get("length_m", feature_event.get("length_m")), 1.0)
         vessel_type = feature_event.get("vessel_type") or features.get("vessel_type") or "Unknown"
 
+        accel = _to_float(features.get("acceleration_knots_per_sec"), 0.0)
+        turn_rate = _to_float(features.get("turn_rate_deg_per_sec"), 0.0)
+        time_gap_sec = _to_float(features.get("time_gap_sec"), 0.0)
+        
+        distance_km = (speed * 1.852 * (time_gap_sec / 3600.0)) if time_gap_sec > 0 else 0.0
+
+        tod_sin, tod_cos = _time_of_day_encoding(str(timestamp))
+
         return {
             "lat": float(lat),
             "lon": float(lon),
             "timestamp": str(timestamp),
-            "speed_knots": float(speed if speed is not None else 0.0),
-            "heading_deg": float(heading if heading is not None else 0.0),
-            "cog_deg": float(cog if cog is not None else heading if heading is not None else 0.0),
-            "length_m": float(length_m if length_m is not None else 1.0),
+            "speed_knots": float(speed),
+            "acceleration_knots_per_sec": accel,
+            "turn_rate_deg_per_sec": turn_rate,
+            "heading_cog_diff_deg": _angle_diff_deg(heading, cog),
+            "norm_speed": float(speed / max(length_m, 1.0)),
+            "tod_sin": float(tod_sin),
+            "tod_cos": float(tod_cos),
+            "cog_sin": float(np.sin(np.radians(cog))),
+            "cog_cos": float(np.cos(np.radians(cog))),
+            "distance_km": distance_km,
+            "heading_deg": float(heading),
+            "cog_deg": float(cog),
+            "length_m": float(length_m),
             "vessel_type": str(vessel_type),
         }
-
+    
     def _cell_key(self, lat: float, lon: float) -> str:
         return f"{int(np.floor(lat))}_{int(np.floor(lon))}"
 
