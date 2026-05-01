@@ -34,6 +34,12 @@ def validate_and_normalize(raw_msg: Dict[str, Any]) -> Tuple[Optional[Dict[str, 
 
     normalized_ts = _normalize_iso8601(timestamp)
     if not normalized_ts:
+        # Diagnostic logging
+        if not hasattr(validate_and_normalize, "_log_count"):
+            validate_and_normalize._log_count = 0
+        if validate_and_normalize._log_count < 5:
+            logger.error(f"DEBUG: Failed to normalize timestamp '{timestamp}'. Raw msg subset: { {k: raw_msg[k] for k in list(raw_msg.keys())[:10]} }")
+            validate_and_normalize._log_count += 1
         return None, "Invalid timestamp format"
 
     heading = _extract_heading(raw_msg)
@@ -269,16 +275,16 @@ def _normalize_iso8601(value: str) -> Optional[str]:
     if not raw:
         return None
 
-    candidates = []
-    candidates.append(raw.replace("Z", "+00:00"))
+    def _prepare(candidate: str) -> str:
+        candidate = candidate.replace(" UTC", "")
+        candidate = re.sub(r"\.(\d{6})\d+(?=(?:\s*[+-]\d{2}:?\d{2}|Z|$))", r".\1", candidate)
+        candidate = re.sub(r"\s*([+-]\d{2})(\d{2})$", r"\1:\2", candidate)
+        return candidate.replace("Z", "+00:00")
 
     # AISStream time_utc commonly appears as:
     # "2026-01-30 17:13:40.186926422 +0000 UTC"
     # Normalize to a Python-compatible ISO-like variant.
-    cleaned = raw.replace(" UTC", "")
-    cleaned = re.sub(r"\s([+-]\d{2})(\d{2})$", r"\1:\2", cleaned)
-    cleaned = re.sub(r"\.(\d{6})\d+(?=\s[+-]\d{2}:\d{2}$)", r".\1", cleaned)
-    candidates.append(cleaned.replace("Z", "+00:00"))
+    candidates = [_prepare(raw), _prepare(raw.replace("Z", "+00:00"))]
 
     dt = None
     for normalized in candidates:

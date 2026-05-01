@@ -22,6 +22,8 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+# Suppress noisy Kafka connection logs
+logging.getLogger("kafka").setLevel(logging.WARNING)
 
 SHUTDOWN = False
 
@@ -126,6 +128,8 @@ def run() -> None:
                     discarded += 1
                     continue
 
+                logger.info("🚨 [ANOMALY DETECTED] Vessel: %s, Score: %.4f, Lat: %.4f, Lon: %.4f", 
+                            anomaly_event['vessel_id'], anomaly_event['score'], anomaly_event['lat'], anomaly_event['lon'])
                 _publish(producer, cfg.output_topic, anomaly_event)
                 emitted += 1
 

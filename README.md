@@ -30,6 +30,35 @@ Detects suspicious vessel behavior using deep learning and hierarchical scoring.
   4. **Vessel Score**: Comparison against the specific vessel's historical behavior.
 - **Output Topic**: `ais.anomalies.events`
 
+## 🚀 Smooth Execution
+
+You can run the entire pipeline either via **Docker Compose** (for easy setup) or **Native Local** (for maximum performance/low disk space).
+
+### Option A: Native Local (Recommended for Dev)
+This runs the Python services directly on your host machine.
+1. **Infrastructure**: Ensure Kafka and Redis are running (you can run *just* these via `docker compose up kafka redis -d`).
+2. **Setup**: Ensure your `.env` file is configured with the correct credentials.
+3. **Launch**:
+   ```bash
+   bash scripts/launch_local.sh
+   ```
+   *Logs will be streamed to `logs/*.log`. Press Ctrl+C to stop all services.*
+
+### Option B: Docker Compose
+This containerizes everything, including Airflow and Infrastructure.
+1. **Launch**:
+   ```bash
+   docker compose up --build
+   ```
+   *Access Airflow UI at [http://localhost:8080](http://localhost:8080).*
+
+---
+
+### Access Components
+- **Airflow UI**: [http://localhost:8080](http://localhost:8080) (Default login: `airflow`/`airflow`)
+- **Kafka**: `localhost:29092`
+- **Redis**: `localhost:6379`
+
 ### 4. Trigger Bridge
 Filters and prepares events for satellite validation.
 - **Service**: `services/trigger_bridge/main.py`

@@ -1,8 +1,9 @@
 import json
 import logging
 import os
+import time
 from kafka import KafkaProducer
-from kafka.errors import KafkaError
+from kafka.errors import KafkaError, NoBrokersAvailable
 
 logger = logging.getLogger(__name__)
 
@@ -22,17 +23,38 @@ class AISProducerWrapper:
         self.bootstrap_servers = bootstrap_servers or os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:29092")
         self.producer = None
 
-        try:
-            self.producer = KafkaProducer(
-                bootstrap_servers=self.bootstrap_servers,
-                value_serializer=lambda v: json.dumps(v).encode('utf-8'),
-                retries=5,
-                acks='all' # Ensure durability
-            )
-            logger.info(f"AISProducerWrapper initialized for topic '{self.topic}' at {self.bootstrap_servers}")
-        except Exception as e:
-            logger.error(f"Failed to initialize AISProducerWrapper producer: {e}")
-            raise e
+        startup_timeout_sec = float(os.getenv("AIS_KAFKA_INIT_TIMEOUT_SEC", "30"))
+        retry_delay_sec = float(os.getenv("AIS_KAFKA_INIT_RETRY_DELAY_SEC", "2"))
+        deadline = time.monotonic() + startup_timeout_sec
+
+        while True:
+            try:
+                self.producer = KafkaProducer(
+                    bootstrap_servers=self.bootstrap_servers,
+                    value_serializer=lambda v: json.dumps(v).encode('utf-8'),
+                    retries=5,
+                    acks='all' # Ensure durability
+                )
+                logger.info(f"AISProducerWrapper initialized for topic '{self.topic}' at {self.bootstrap_servers}")
+                break
+            except NoBrokersAvailable as exc:
+                if time.monotonic() >= deadline:
+                    logger.error(
+                        "Failed to initialize AISProducerWrapper producer after %.1fs: %s",
+                        startup_timeout_sec,
+                        exc,
+                    )
+                    raise
+                logger.warning(
+                    "Kafka broker not ready at %s; retrying in %.1fs",
+                    self.bootstrap_servers,
+                    retry_delay_sec,
+                )
+                time.sleep(retry_delay_sec)
+            except Exception as exc:
+                last_error = exc
+                logger.error(f"Failed to initialize AISProducerWrapper producer: {exc}")
+                raise
 
     def publish_record(self, record: dict):
         """
@@ -43,7 +65,6 @@ class AISProducerWrapper:
         """
         if not self.producer:
             logger.error("Producer not initialized. Cannot send message.")
-            return
 
         try:
             # Fire and forget with logging (async)
