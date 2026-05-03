@@ -107,11 +107,17 @@ def build_feature_event(cleaned: Dict[str, Any], state: Dict[str, Any]) -> Dict[
         delta = _smallest_angle_delta(prev_cog, current_cog)
         turn_rate_deg_per_sec = delta / time_gap_sec
 
-    state["last_positions"].append({"lat": current_lat, "lon": current_lon})
-    state["timestamps"].append(current_ts)
-    state["speeds_knots"].append(speed_knots)
-    state["headings_deg"].append(current_heading)
-    state["cogs_deg"].append(current_cog if current_cog is not None else current_heading)
+    from services.stream_processor.vessel_state import append_state
+
+    append_state(
+        state,
+        current_lat,
+        current_lon,
+        current_ts,
+        speed_knots,
+        current_heading,
+        current_cog if current_cog is not None else current_heading,
+    )
 
     return {
         "schema_version": "1.0",
@@ -334,22 +340,13 @@ def _smallest_angle_delta(a: float, b: float) -> float:
 
 
 def _last_observation(state: Dict[str, Any]) -> Tuple[Optional[float], Optional[float], Optional[str], Optional[float], Optional[float], Optional[float]]:
-    last_positions = state.get("last_positions")
-    timestamps = state.get("timestamps")
-    speeds = state.get("speeds_knots")
-    headings = state.get("headings_deg")
-
-    if not last_positions or not timestamps:
+    history = state.get("history")
+    if not history:
         return None, None, None, None, None, None
 
-    prev_pos = last_positions[-1]
-    prev_ts = timestamps[-1]
-    prev_speed = speeds[-1] if speeds else None
-    prev_heading = headings[-1] if headings else None
-    cogs = state.get("cogs_deg")
-    prev_cog = cogs[-1] if cogs else None
-
-    return prev_pos.get("lat"), prev_pos.get("lon"), prev_ts, prev_speed, prev_heading, prev_cog
+    # Each entry = (lat, lon, timestamp, speed, heading, cog)
+    last = history[-1]
+    return last[0], last[1], last[2], last[3], last[4], last[5]
 
 
 def _deterministic_id(vessel_id: str, timestamp: str, lat: float, lon: float, suffix: str = "cleaned") -> str:

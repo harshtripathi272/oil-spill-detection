@@ -5,6 +5,7 @@ import signal
 import sys
 from typing import Any, Dict
 
+import requests
 from dotenv import load_dotenv
 from kafka import KafkaConsumer, KafkaProducer
 
@@ -23,7 +24,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 # Suppress noisy Kafka connection logs
-logging.getLogger("kafka").setLevel(logging.WARNING)
+logging.getLogger("kafka").setLevel(logging.ERROR)
 
 SHUTDOWN = False
 
@@ -59,6 +60,54 @@ def _build_producer(cfg: TriggerBridgeConfig) -> KafkaProducer:
 def _publish(producer: KafkaProducer, topic: str, payload: Dict[str, Any]) -> None:
     future = producer.send(topic, payload)
     future.get(timeout=10)
+
+
+def _trigger_airflow_dag(cfg: TriggerBridgeConfig, trigger_event: Dict[str, Any]) -> bool:
+    """Trigger the Airflow DAG with the trigger event as configuration.
+    
+    Args:
+        cfg: TriggerBridgeConfig instance
+        trigger_event: The trigger event to pass as DAG run configuration
+        
+    Returns:
+        True if trigger succeeded or is disabled, False if trigger failed
+    """
+    if not cfg.airflow_trigger_enabled:
+        return True
+    
+    try:
+        url = f"{cfg.airflow_api_base_url}/dags/{cfg.airflow_dag_id}/dagRuns"
+        headers = {"Content-Type": "application/json"}
+        payload = {"conf": trigger_event}
+        
+        response = requests.post(
+            url,
+            json=payload,
+            headers=headers,
+            auth=(cfg.airflow_username, cfg.airflow_password),
+            timeout=10,
+        )
+        
+        if response.status_code in (200, 201):
+            logger.info("✅ [AIRFLOW TRIGGERED] DAG run created for event: %s", trigger_event.get("incident_id"))
+            return True
+        else:
+            logger.warning(
+                "⚠️ [AIRFLOW TRIGGER FAILED] Status: %d, Response: %s",
+                response.status_code,
+                response.text[:200],
+            )
+            return False
+            
+    except requests.exceptions.Timeout:
+        logger.warning("⚠️ [AIRFLOW TRIGGER TIMEOUT] Could not reach Airflow API at %s", cfg.airflow_api_base_url)
+        return False
+    except requests.exceptions.ConnectionError:
+        logger.warning("⚠️ [AIRFLOW TRIGGER ERROR] Connection failed to %s", cfg.airflow_api_base_url)
+        return False
+    except Exception as exc:
+        logger.warning("⚠️ [AIRFLOW TRIGGER ERROR] %s", exc)
+        return False
 
 
 def run() -> None:
@@ -144,7 +193,10 @@ def run() -> None:
 
 
                 _publish(producer, cfg.output_topic, trigger_event)
+                _trigger_airflow_dag(cfg, trigger_event)
                 forwarded += 1
+                logger.info("🚀 [SAR TRIGGER SENT] Vessel: %s, Score: %.4f, Lat: %.4f, Lon: %.4f", 
+                            vessel_id, anomaly_event.get('score', 0), anomaly_event.get('lat', 0), anomaly_event.get('lon', 0))
 
                 if processed % 100 == 0:
                     logger.info(

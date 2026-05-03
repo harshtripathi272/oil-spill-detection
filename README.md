@@ -36,8 +36,14 @@ You can run the entire pipeline either via **Docker Compose** (for easy setup) o
 
 ### Option A: Native Local (Recommended for Dev)
 This runs the Python services directly on your host machine.
-1. **Infrastructure**: Ensure Kafka and Redis are running (you can run *just* these via `docker compose up kafka redis -d`).
+1. **Infrastructure**: Ensure Kafka and Redis are running (you can run *just* these via `ps aux | grep -E "kafka|zookeeper" | grep -v grep`
+`netstat -tuln | grep -E "9092|2181" || ss -tuln | grep -E "9092|2181"`
+#Start zookeper and kafka
+`nohup infra/kafka/bin/zookeeper-server-start.sh infra/kafka/config/zookeeper.properties > logs/zookeeper.log 2>&1 & nohup infra/kafka/bin/kafka-server-start.sh infra/kafka/config/server.properties > logs/kafka.log 2>&1 &`).
 2. **Setup**: Ensure your `.env` file is configured with the correct credentials.
+`export AIS_KAFKA_INIT_TIMEOUT_SEC=120`
+`export AIS_KAFKA_INIT_RETRY_DELAY_SEC=2`
+`bash scripts/launch_local.sh`
 3. **Launch**:
    ```bash
    bash scripts/launch_local.sh

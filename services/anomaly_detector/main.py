@@ -22,8 +22,8 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
-# Suppress noisy Kafka connection logs
-logging.getLogger("kafka").setLevel(logging.WARNING)
+# Suppress noisy Kafka connection logs 
+logging.getLogger("kafka").setLevel(logging.ERROR)
 
 SHUTDOWN = False
 

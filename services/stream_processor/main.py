@@ -125,8 +125,8 @@ def run() -> None:
                 vessel_id = cleaned["vessel_id"]
                 vessel_state = state.get_state(vessel_id)
                 prev_ts = None
-                if vessel_state.get("timestamps"):
-                    prev_ts = vessel_state["timestamps"][-1]
+                if vessel_state.get("history"):
+                    prev_ts = vessel_state["history"][-1][2]  # index 2 is timestamp
 
                 current_ts = cleaned["timestamp"]
                 reset_voyage = False

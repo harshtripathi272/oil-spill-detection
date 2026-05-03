@@ -88,18 +88,9 @@ export PYTHONPATH="$PROJECT_ROOT:$PYTHONPATH"
 # Function to stop all background processes
 cleanup() {
     echo ""
-    echo -e "${BLUE}[INFO]${NC} Stopping all pipeline services..."
-    # Kill all child processes (including services and infra)
-    pkill -P $$
-
-    # Stop infra if started by us
-    echo -e "${BLUE}[INFO]${NC} Shutting down infra..."
-    "$PROJECT_ROOT/infra/kafka/bin/kafka-server-stop.sh" >/dev/null 2>&1
-    "$PROJECT_ROOT/infra/kafka/bin/zookeeper-server-stop.sh" >/dev/null 2>&1
-    redis-cli shutdown >/dev/null 2>&1
-    
-    echo -e "${GREEN}[OK]${NC} All services stopped."
-    exit
+    # Use the dedicated stop script for clean shutdown
+    "$PROJECT_ROOT/scripts/stop_local.sh"
+    exit 0
 }
 
 # Trap CTRL+C

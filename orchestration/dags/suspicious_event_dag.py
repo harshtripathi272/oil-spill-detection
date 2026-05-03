@@ -8,6 +8,13 @@ Sentinel-1 imagery, running the oil spill detection model, and updating the inci
 """
 
 import os
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from datetime import datetime, timedelta, timezone
@@ -122,8 +129,8 @@ with DAG(
     'suspicious_event_validation',
     default_args=default_args,
     description='Validates suspicious AIS events using Sentinel-1 imagery',
-    schedule='*/2 * * * *',
-    start_date=datetime.now(timezone.utc) - timedelta(days=1),
+    schedule=None,
+    start_date=datetime(2026, 5, 1, tzinfo=timezone.utc),
     catchup=False,
     tags=['event_driven', 'ais', 'oil_spill'],
 ) as dag:
