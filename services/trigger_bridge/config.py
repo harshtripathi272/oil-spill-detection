@@ -15,9 +15,8 @@ class TriggerBridgeConfig:
 
     poll_timeout_ms: int = field(default_factory=lambda: int(os.getenv("AIS_TRIGGER_BRIDGE_POLL_TIMEOUT_MS", "1000")))
 
-    # Airflow API configuration for DAG triggering
-    airflow_api_base_url: str = field(default_factory=lambda: os.getenv("AIRFLOW_API_BASE_URL", "http://localhost:8080/api/v1"))
+    # Airflow CLI configuration for DAG triggering
+    airflow_home: str = field(default_factory=lambda: os.getenv("AIRFLOW_HOME", "/data/user13/airflow"))
+    airflow_executable_path: str = field(default_factory=lambda: os.getenv("AIRFLOW_EXECUTABLE", "/data/user13/miniconda3/envs/torch-gpu/bin/airflow"))
     airflow_dag_id: str = field(default_factory=lambda: os.getenv("AIRFLOW_DAG_ID", "suspicious_event_validation"))
-    airflow_username: str = field(default_factory=lambda: os.getenv("AIRFLOW_USERNAME", "airflow"))
-    airflow_password: str = field(default_factory=lambda: os.getenv("AIRFLOW_PASSWORD", "airflow"))
     airflow_trigger_enabled: bool = field(default_factory=lambda: os.getenv("AIRFLOW_TRIGGER_ENABLED", "true").lower() == "true")

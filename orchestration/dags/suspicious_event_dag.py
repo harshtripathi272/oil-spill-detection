@@ -15,8 +15,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv(REPO_ROOT / '.env')
+
 from airflow import DAG
-from airflow.operators.python import PythonOperator
+from airflow.providers.standard.operators.python import PythonOperator
 from datetime import datetime, timedelta, timezone
 from orchestration.utils.state_store import StateStore, STATE_PROCESSING, STATE_VERIFIED, STATE_FAILED
 from orchestration.utils.geometry import create_buffer_bbox, wkt_from_bbox
@@ -101,7 +105,8 @@ def prepare_search_params(**context):
     return {
         "roi_wkt": wkt,
         "start_date": start_date,
-        "end_date": end_date
+        "end_date": end_date,
+        "event_time": event_dt.strftime('%Y-%m-%dT%H:%M:%S+00:00')
     }
 
 def process_results(**context):
@@ -163,16 +168,18 @@ with DAG(
         roi_wkt="{{ ti.xcom_pull(task_ids='prepare_search_params', key='return_value')['roi_wkt'] }}",
         search_start="{{ ti.xcom_pull(task_ids='prepare_search_params', key='return_value')['start_date'] }}",
         search_end="{{ ti.xcom_pull(task_ids='prepare_search_params', key='return_value')['end_date'] }}",
+        event_time="{{ ti.xcom_pull(task_ids='prepare_search_params', key='return_value')['event_time'] }}",
     )
 
     download_sentinel = SentinelDownloadOperator(
         task_id='download_sentinel',
-        download_dir='/tmp/sentinel_data'
+        download_dir='/data/user13/oilspill_ugq/oil-spill-detection/sentinel_data/downloads'
     )
 
     sar_inference = SARInferenceOperator(
         task_id='sar_inference',
-        model_path='/models/oil_spill_v1.pt'
+        model_path='/models/oil_spill_v1.pt',
+        inference_command='python /data/user13/oilspill_ugq/oil-spill-detection/scripts/run_inference.py --image {input} --model {model}'
     )
     
     finalize_task = PythonOperator(
