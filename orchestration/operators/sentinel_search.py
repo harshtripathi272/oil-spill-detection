@@ -137,7 +137,17 @@ class SentinelSearchOperator(BaseOperator):
             logging.debug("ASF product mapped for XCom: %s", formatted_product)
             formatted.append(formatted_product)
 
-        return formatted
+        # Filter out BURST products (not suitable for current preprocessing pipeline)
+        filtered_products = []
+        for product in formatted:
+            filename = product.get("filename", "").upper()
+            if "BURST" in filename:
+                logging.info(f"⚠️ Skipping BURST product (not supported): {filename}")
+                continue
+            filtered_products.append(product)
+
+        logging.info(f"📊 Filtered {len(formatted) - len(filtered_products)} BURST products, keeping {len(filtered_products)} RTC products")
+        return filtered_products
 
     @staticmethod
     def _extract_product_field(product, field_name: str):

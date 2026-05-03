@@ -178,8 +178,8 @@ with DAG(
 
     sar_inference = SARInferenceOperator(
         task_id='sar_inference',
-        model_path='/models/oil_spill_v1.pt',
-        inference_command='python /data/user13/oilspill_ugq/oil-spill-detection/scripts/run_inference.py --image {input} --model {model}'
+        model_path='/data/user13/oilspill_ugq/oil-spill-detection/runs/yolo/yolo26n-bbox-1024-merged/weights/best.pt',
+        inference_command='python /data/user13/oilspill_ugq/oil-spill-detection/scripts/run_inference.py --image {input} --model {model} --task detect'
     )
     
     finalize_task = PythonOperator(

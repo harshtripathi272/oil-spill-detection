@@ -27,8 +27,15 @@ if str(ROOT) not in sys.path:
 from training.unet.model import build_unet
 
 
-def yolo_inference(image_path: str, model_path: str, conf: float = 0.5, imgsz: int = 640):
+def yolo_inference(image_path: str, model_path: str, conf: float = 0.5, imgsz: int = 640, task: str = "detect"):
     """Run YOLO inference on single image."""
+    filename = Path(image_path).name.upper()
+    if "BURST" in filename:
+        raise RuntimeError(
+            f"BURST images are not supported for inference. "
+            f"Current preprocessing pipeline expects RTC-like inputs. File: {filename}"
+        )
+
     model = YOLO(model_path)
     result = model.predict(
         source=image_path,
@@ -38,14 +45,22 @@ def yolo_inference(image_path: str, model_path: str, conf: float = 0.5, imgsz: i
         verbose=False
     )[0]
 
-    # Check if oil spill detected
-    has_detection = result.masks is not None and result.masks.data is not None
-    confidence = float(result.conf[0]) if result.conf is not None and len(result.conf) > 0 else 0.0
+    # Check if oil spill detected based on task type
+    if task == "segment":
+        has_detection = result.masks is not None and result.masks.data is not None
+    else:  # detect (bbox)
+        has_detection = result.boxes is not None and len(result.boxes) > 0
+
+    # Get confidence from boxes (works for both detect and segment tasks)
+    confidence = 0.0
+    if result.boxes is not None and hasattr(result.boxes, 'conf') and len(result.boxes.conf) > 0:
+        confidence = float(result.boxes.conf[0])
 
     return {
         "prediction": "oil_spill" if has_detection and confidence > conf else "no_oil_spill",
         "confidence": confidence,
-        "model_type": "yolo",
+        "model_type": f"yolo_{task}",
+        "detections": len(result.boxes) if result.boxes else 0,
     }
 
 
@@ -95,6 +110,7 @@ def main():
     parser.add_argument("--image", type=str, required=True, help="Path to input image")
     parser.add_argument("--model", type=str, required=True, help="Path to model weights")
     parser.add_argument("--model-type", choices=["yolo", "unet"], default="yolo", help="Model type")
+    parser.add_argument("--task", choices=["detect", "segment"], default="detect", help="YOLO task type (detect=bbox, segment=mask)")
     parser.add_argument("--conf", type=float, default=0.5, help="Confidence threshold (YOLO)")
     parser.add_argument("--threshold", type=float, default=0.5, help="Pixel threshold (UNet)")
     parser.add_argument("--imgsz", type=int, default=640, help="Image size (YOLO)")
@@ -104,7 +120,7 @@ def main():
 
     try:
         if args.model_type == "yolo":
-            result = yolo_inference(args.image, args.model, args.conf, args.imgsz)
+            result = yolo_inference(args.image, args.model, args.conf, args.imgsz, args.task)
         else:
             result = unet_inference(args.image, args.model, args.threshold, args.image_size)
 

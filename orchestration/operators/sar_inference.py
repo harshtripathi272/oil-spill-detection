@@ -71,6 +71,15 @@ class SARInferenceOperator(BaseOperator):
         path = Path(image_path)
         suffix = path.suffix.lower()
 
+        # Check if this is a BURST image (not suitable for current preprocessing)
+        filename = path.name.upper()
+        if "BURST" in filename:
+            raise RuntimeError(
+                f"BURST images are not supported for inference. "
+                f"Current preprocessing pipeline expects RTC (Radiometrically Terrain Corrected) images. "
+                f"File: {path.name}"
+            )
+
         if suffix in {".png", ".jpg", ".jpeg"}:
             converted_path = str(path)
         elif suffix in {".tif", ".tiff"}:
