@@ -6,6 +6,13 @@ for specific areas of interest (AOIs). It is useful for persistent monitoring
 independent of specific AIS events.
 """
 
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 from airflow import DAG
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import PythonOperator
@@ -34,7 +41,7 @@ with DAG(
     default_args=default_args,
     description='Polls for Sentinel-1 availability in key regions',
     schedule='@daily',
-    start_date=datetime.now(timezone.utc) - timedelta(days=1),
+    start_date=datetime(2026, 5, 1, tzinfo=timezone.utc),
     catchup=False,
     tags=['monitoring', 'sentinel'],
 ) as dag:

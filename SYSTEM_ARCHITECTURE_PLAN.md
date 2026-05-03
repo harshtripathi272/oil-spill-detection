@@ -149,9 +149,10 @@ Consumes:
 
 Phase 1 (AIS inference integrated):
 
-1. Load anomaly scores from `preprocessing/ais_inference.py` output parquet
-2. Emit anomalies when model score exceeds threshold
-3. Include model metadata in events
+1. Consume `ais.features.vessel_tracks` from Kafka
+2. Maintain a per-vessel sliding window of recent AIS timesteps
+3. Encode the live window with the trained Transformer encoder and score it against the memory bank
+4. Emit anomalies when the realtime score exceeds threshold and include model metadata in events
 
 Current model name:
 

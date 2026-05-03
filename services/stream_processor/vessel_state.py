@@ -1,15 +1,18 @@
 import json
 import logging
 from collections import deque
-from typing import Any, Deque, Dict, List
+from typing import Any, Deque, Dict, List, Optional, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
 
+# In-Memory Store 
 class InMemoryVesselStateStore:
-    def __init__(self, window_size: int):
+    def __init__(self, window_size: int, ttl_sec: int, max_vessels: int = 100000):
+        from cachetools import TTLCache
+
         self.window_size = window_size
-        self._state: Dict[str, Dict[str, Any]] = {}
+        self._state = TTLCache(maxsize=max_vessels, ttl=ttl_sec)
 
     def get(self, vessel_id: str) -> Dict[str, Any]:
         return self._state.get(vessel_id, _empty_state(self.window_size))
@@ -18,6 +21,7 @@ class InMemoryVesselStateStore:
         self._state[vessel_id] = state
 
 
+# Redis Store 
 class RedisVesselStateStore:
     def __init__(self, redis_url: str, window_size: int, ttl_sec: int):
         self.window_size = window_size
@@ -29,7 +33,8 @@ class RedisVesselStateStore:
             raise RuntimeError("redis package is not installed") from exc
 
         self._redis = Redis.from_url(redis_url, decode_responses=True)
-        # Fail fast so the service can fall back to in-memory state if Redis is unavailable.
+
+        # Fail fast if Redis unavailable
         self._redis.ping()
 
     def _key(self, vessel_id: str) -> str:
@@ -39,20 +44,23 @@ class RedisVesselStateStore:
         raw = self._redis.get(self._key(vessel_id))
         if not raw:
             return _empty_state(self.window_size)
+
         try:
             payload = json.loads(raw)
-            return _normalize_state(payload, self.window_size)
+            return _deserialize_state(payload, self.window_size)
         except Exception:
-            logger.warning("Failed to decode vessel state for %s; resetting state", vessel_id)
+            logger.warning("Corrupted state for %s, resetting", vessel_id)
             return _empty_state(self.window_size)
 
     def set(self, vessel_id: str, state: Dict[str, Any]) -> None:
         payload = json.dumps(_serialize_state(state))
-        key = self._key(vessel_id)
-        self._redis.set(key, payload)
-        self._redis.expire(key, self.ttl_sec)
+
+        # 🔥 Atomic set + TTL (fixes memory leak bug)
+        self._redis.set(self._key(vessel_id), payload, ex=self.ttl_sec)
 
 
+
+# Manager
 class VesselStateManager:
     def __init__(self, backend: str, redis_url: str, window_size: int, ttl_sec: int):
         self.window_size = window_size
@@ -67,41 +75,57 @@ class VesselStateManager:
                 logger.info("Using Redis-backed vessel state store")
                 return
             except Exception as exc:
-                logger.warning("Redis unavailable (%s); falling back to in-memory state", exc)
+                logger.warning(
+                    "Redis unavailable (%s); falling back to in-memory", exc
+                )
 
-        self.store = InMemoryVesselStateStore(window_size=window_size)
+        # fallback (safe now)
+        self.store = InMemoryVesselStateStore(
+            window_size=window_size,
+            ttl_sec=ttl_sec,
+        )
         logger.info("Using in-memory vessel state store")
 
     def get_state(self, vessel_id: str) -> Dict[str, Any]:
         return self.store.get(vessel_id)
 
     def put_state(self, vessel_id: str, state: Dict[str, Any]) -> None:
-        self.store.set(vessel_id, _normalize_state(state, self.window_size))
+        self.store.set(vessel_id, state)
+
+# State Representation 
+# Instead of 5 separate deques → use ONE compact structure
+# Each entry = (lat, lon, timestamp, speed, heading, cog)
+StateEntry = Tuple[float, float, Union[float, str], Optional[float], Optional[float], Optional[float]]
 
 
 def _empty_state(window_size: int) -> Dict[str, Any]:
     return {
-        "last_positions": deque(maxlen=window_size),
-        "timestamps": deque(maxlen=window_size),
-        "speeds_knots": deque(maxlen=window_size),
-        "headings_deg": deque(maxlen=window_size),
-        "cogs_deg": deque(maxlen=window_size),
+        "history": deque(maxlen=window_size)  # type: Deque[StateEntry]
     }
 
 
-def _normalize_state(state: Dict[str, Any], window_size: int) -> Dict[str, Any]:
-    normalized = _empty_state(window_size)
-    for key in normalized.keys():
-        values = state.get(key, [])
-        normalized[key].extend(list(values)[-window_size:])
-    return normalized
+def append_state(
+    state: Dict[str, Any],
+    lat: float,
+    lon: float,
+    timestamp: Union[float, str],
+    speed: Optional[float],
+    heading: Optional[float],
+    cog: Optional[float],
+):
+    state["history"].append((lat, lon, timestamp, speed, heading, cog))
 
-
+# Serialization
 def _serialize_state(state: Dict[str, Any]) -> Dict[str, List[Any]]:
     return {
-        "last_positions": list(state.get("last_positions", [])),
-        "timestamps": list(state.get("timestamps", [])),
-        "speeds_knots": list(state.get("speeds_knots", [])),
-        "headings_deg": list(state.get("headings_deg", [])),
-        "cogs_deg": list(state.get("cogs_deg", [])),
+        "history": list(state.get("history", []))
     }
+
+
+def _deserialize_state(payload: Dict[str, Any], window_size: int) -> Dict[str, Any]:
+    state = _empty_state(window_size)
+
+    history = payload.get("history", [])
+    state["history"].extend(history[-window_size:])
+
+    return state

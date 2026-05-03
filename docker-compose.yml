@@ -159,5 +159,42 @@ services:
       - ./orchestration/plugins:/sources/plugins
       - ./orchestration:/sources/orchestration
 
+  # --- AIS Microservices ---
+
+  ais-common: &ais-common
+    build: .
+    env_file:
+      - ./.env
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      kafka:
+        condition: service_started
+      redis:
+        condition: service_healthy
+
+  ais-ingestion:
+    <<: *ais-common
+    container_name: ais-ingestion
+    command: python ingestion/ais_stream/run_ingestion.py
+
+  stream-processor:
+    <<: *ais-common
+    container_name: ais-stream-processor
+    command: python services/stream_processor/main.py
+
+  anomaly-detector:
+    <<: *ais-common
+    container_name: ais-anomaly-detector
+    command: python services/anomaly_detector/main.py
+    volumes:
+      - ./preprocessing/outputs:/app/preprocessing/outputs
+
+  trigger-bridge:
+    <<: *ais-common
+    container_name: ais-trigger-bridge
+    command: python services/trigger_bridge/main.py
+
 volumes:
   postgres-db-volume:

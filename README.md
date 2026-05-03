@@ -2,178 +2,135 @@
 
 **VesselWatch** is a production-grade monitoring system designed to detect and validate potential oil spills using real-time vessel traffic (AIS) and satellite Synthetic Aperture Radar (SAR) imagery. By fusing terrestrial and maritime data with remote sensing, VesselWatch enables rapid response to environmental threats.
 
-## 🚀 System Flow
+## 🚀 Data Pipeline Architecture
 
-1.  **AIS Ingestion**: Real-time vessel data is consumed via WebSockets and streamed into a **Kafka** broker.
-2.  **Detection**: AIS anomaly detector consumes vessel-track features, rebuilds the live voyage window, encodes it with the trained AIS encoder, and compares it against the saved memory bank to emit suspicious vessel events.
-3.  **Orchestration**: **Apache Airflow** manages the validation pipeline:
-    -   **Event Trigger**: A suspicious event initiates the `suspicious_event_validation` DAG.
-    -   **ROI Calculation**: The system defines a spatial buffer (Region of Interest) around the event coordinates.
-    -   **Satellite Search**: Custom operators query the **Sentinel-1** catalog for SAR products covering the ROI.
-    -   **Data Retrieval**: Relevant SAR scenes are downloaded to local/object storage.
-4.  **Verification**: 
-    -   A pretrained **CNN-based model** runs inference on the SAR imagery to identify oil slicks.
-    -   The results are persisted in an **Incident State Store**, marking events as `VERIFIED` or `FALSE_POSITIVE`.
+The system operates as a decoupled, event-driven pipeline with five major stages:
+
+### 1. AIS Ingestion Layer
+Real-time vessel data is consumed via WebSockets from `aisstream.io`.
+- **Primary Source**: `ingestion/ais_stream/run_ingestion.py`
+- **Kafka Topic**: `ais.raw.position_reports` (Immutable, append-only)
+
+### 2. Stream Processing Layer
+Cleans raw signals and tracks vessel trajectory state.
+- **Service**: `services/stream_processor/main.py`
+- **Output Topics**: 
+  - `ais.cleaned.position_reports`: Normalized AIS records.
+  - `ais.features.vessel_tracks`: Computed kinematic features (speed, acceleration, heading change).
+- **State Management**: Uses **Redis** to maintain a sliding window of recent positions per vessel.
+
+### 3. Anomaly Detection Layer
+Detects suspicious vessel behavior using deep learning and hierarchical scoring.
+- **Service**: `services/anomaly_detector/main.py`
+- **Model**: `SequenceTransformerEncoder` (`AIS-Contrastive-Encoder-v1`).
+- **Scoring Logic**: Combines four dimensions:
+  1. **Physics Score**: Detects kinematic impossibilities (e.g., teleportation).
+  2. **Global Score**: Comparison against all historical vessel patterns.
+  3. **Local Score**: Comparison against patterns specific to the current grid cell ($1^{\circ} \times 1^{\circ}$).
+  4. **Vessel Score**: Comparison against the specific vessel's historical behavior.
+- **Output Topic**: `ais.anomalies.events`
+
+## 🚀 Smooth Execution
+
+You can run the entire pipeline either via **Docker Compose** (for easy setup) or **Native Local** (for maximum performance/low disk space).
+
+### Option A: Native Local (Recommended for Dev)
+This runs the Python services directly on your host machine.
+1. **Infrastructure**: Ensure Kafka and Redis are running (you can run *just* these via `ps aux | grep -E "kafka|zookeeper" | grep -v grep`
+`netstat -tuln | grep -E "9092|2181" || ss -tuln | grep -E "9092|2181"`
+#Start zookeper and kafka
+`nohup infra/kafka/bin/zookeeper-server-start.sh infra/kafka/config/zookeeper.properties > logs/zookeeper.log 2>&1 & nohup infra/kafka/bin/kafka-server-start.sh infra/kafka/config/server.properties > logs/kafka.log 2>&1 &`).
+2. **Setup**: Ensure your `.env` file is configured with the correct credentials.
+`export AIS_KAFKA_INIT_TIMEOUT_SEC=120`
+`export AIS_KAFKA_INIT_RETRY_DELAY_SEC=2`
+`bash scripts/launch_local.sh`
+3. **Launch**:
+   ```bash
+   bash scripts/launch_local.sh
+   ```
+   *Logs will be streamed to `logs/*.log`. Press Ctrl+C to stop all services.*
+
+### Option B: Docker Compose
+This containerizes everything, including Airflow and Infrastructure.
+1. **Launch**:
+   ```bash
+   docker compose up --build
+   ```
+   *Access Airflow UI at [http://localhost:8080](http://localhost:8080).*
+
+---
+
+### Access Components
+- **Airflow UI**: [http://localhost:8080](http://localhost:8080) (Default login: `airflow`/`airflow`)
+- **Kafka**: `localhost:29092`
+- **Redis**: `localhost:6379`
+
+### 4. Trigger Bridge
+Filters and prepares events for satellite validation.
+- **Service**: `services/trigger_bridge/main.py`
+- **Responsibility**: Selects high-confidence anomalies and maps them to SAR triggers.
+- **Output Topic**: `sar.trigger.events`
+
+### 5. SAR Orchestration (Airflow)
+Manages the validation workflow using **Apache Airflow**.
+- **DAG**: `orchestration/dags/suspicious_event_dag.py`
+- **Flow**:
+  1. **Kafka Sensor**: `KafkaTriggerSensor` polls `sar.trigger.events`.
+  2. **ROI Calculation**: Bounding box created around event coordinates.
+  3. **Sentinel Search**: `SentinelSearchOperator` queries the Copernicus catalog.
+  4. **Data Retrieval**: `SentinelDownloadOperator` downloads SAR imagery.
+  5. **Verification**: `SARInferenceOperator` runs a pretrained **YOLOv8** model to detect oil slicks.
+  6. **Finalization**: Updates the **Incident State Store** (`STATE_VERIFIED` or `STATE_FAILED`).
 
 ## 📂 Project Structure
 
 ```text
 .
-├── 📁 config                # System and environment configurations
+├── 📁 services              # Real-time microservices
+│   ├── 📁 stream_processor  # AIS cleaning and feature engineering
+│   ├── 📁 anomaly_detector  # DL-based anomaly detection
+│   └── 📁 trigger_bridge    # SAR trigger filtering and mapping
 ├── 📁 ingestion             # Data ingestion layer
 │   └── 📁 ais_stream        # AIS WebSocket consumer and Kafka producer
-│       ├── 📁 dead_letter    # Error handling and invalid message storage
-│       │   ├── 🐍 invalid_messages.py
-│       │   └── ⚙️ see.json
-│       ├── 🐍 __init__.py
-│       ├── 🐍 ais_ingestion.py
-│       ├── 🐍 run_http_ingestion.py
-│       ├── 🐍 run_ingestion.py
-│       └── 🐍 run_file_ingestion.py
 ├── 📁 orchestration          # Airflow workflow management
 │   ├── 📁 dags              # Directed Acyclic Graphs (DAGs)
-│   │   ├── 🐍 sentinel_polling_dag.py     # Periodic satellite search
-│   │   └── 🐍 suspicious_event_dag.py      # Event-driven validation
-│   ├── 📁 operators         # Custom Airflow operators
-│   │   ├── 🐍 sar_inference.py           # ML model inference wrapper
-│   │   ├── 🐍 sentinel_download.py      # SAR data downloader
-│   │   └── 🐍 sentinel_search.py        # Metadata discovery operator
-│   ├── 📁 plugins           # Airflow UI and system plugins
-│   ├── 📁 sensors           # Custom polling sensors
-│   │   └── 🐍 sentinel_availability_sensor.py # Wait for data availability
-│   └── 📁 utils             # Shared libraries
-│       ├── 🐍 geometry.py   # Geospatial arithmetic and ROI logic
-│       └── 🐍 state_store.py # Incident lifecycle management
-├── ⚙️ .gitignore
-├── 📝 README.md
-├── ⚙️ docker-compose.yml     # Infrastructure (Kafka, Airflow, Zookeeper)
+│   ├── 📁 operators         # Custom Airflow operators (Search, Download, Inference)
+│   └── 📁 sensors           # Custom Kafka and Sentinel sensors
+├── 📁 preprocessing          # Batch training and offline inference scripts
+├── 📁 services/ui            # (Planned) React Dashboard
+├── ⚙️ docker-compose.yml     # Infrastructure (Kafka, Redis, Airflow)
 └── 📄 requirements.txt      # Python dependencies
 ```
 
 ## 🛠️ Infrastructure
 
--   **Kafka**: Real-time message streaming.
--   **Airflow**: Workflow orchestration and task scheduling.
+-   **Kafka**: The backbone for all asynchronous communication between services.
+-   **Redis**: High-speed state store for real-time vessel trajectory windows.
+-   **PostgreSQL**: (Planned) Long-term persistence for incidents and detections.
 -   **Sentinel-1 (SAR)**: High-resolution radar imagery for all-weather spill detection.
--   **CNN**: Deep learning model for automated pattern recognition in radar data.
 
-## Operational Notes
+## ⚙️ Environment Configuration
 
-The SAR validation pipeline is now wired to real Sentinel catalog search/download and command-driven inference.
+| Variable | Description |
+| :--- | :--- |
+| `KAFKA_BOOTSTRAP_SERVERS` | Kafka broker address (default: `localhost:29092`) |
+| `REDIS_URL` | Redis connection string (default: `redis://localhost:6379/0`) |
+| `COPERNICUS_USER` | Sentinel catalog credentials |
+| `SAR_INFERENCE_CMD` | Template command for YOLO inference |
+| `AIS_ENCODER_CHECKPOINT` | Path to trained transformer encoder weights |
 
-Required environment variables:
+## 🚀 Running the System
 
-- `COPERNICUS_USER`: Copernicus/ESA username
-- `COPERNICUS_PASSWORD`: Copernicus/ESA password
-- `SAR_INFERENCE_CMD`: command template used by `SARInferenceOperator`
-- `AIS_INFERENCE_SCORES_PATH`: parquet produced by `python -m preprocessing.ais_inference` and consumed by `services/anomaly_detector`
+1. **Start Infrastructure**:
+   ```bash
+   docker-compose up -d
+   ```
 
-Local Airflow notes:
+2. **Launch Services (Order matters)**:
+   - Run Ingestion: `python ingestion/ais_stream/run_ingestion.py`
+   - Run Stream Processor: `python services/stream_processor/main.py`
+   - Run Anomaly Detector: `python services/anomaly_detector/main.py`
+   - Run Trigger Bridge: `python services/trigger_bridge/main.py`
 
-- Set `AIRFLOW__CORE__DAGS_FOLDER=$PWD/orchestration/dags` before running `airflow standalone` so Airflow scans this repo's DAGs.
-- Set `AIRFLOW__CORE__LOAD_EXAMPLES=False` before initializing a new Airflow metadata DB.
-- If you already started Airflow once and see the default example DAGs, reset the local metadata DB or delete `.airflow/airflow.db` before starting again.
-
-`SAR_INFERENCE_CMD` placeholders:
-
-- `{input}`: path to downloaded Sentinel product file
-- `{model}`: model path from DAG/operator config
-
-Expected `SAR_INFERENCE_CMD` stdout contract (single JSON object per run):
-
-```json
-{
-    "prediction": "oil_spill",
-    "confidence": 0.91,
-    "mask_path": "/tmp/masks/example_mask.png"
-}
-```
-
-Airflow task integration contracts:
-
-- `prepare_search_params` returns `roi_wkt`, `start_date`, `end_date`
-- `search_sentinel` returns list of product objects, each including `product_id`
-- `download_sentinel` returns list of local downloaded file paths
-- `sar_inference` returns list of inference result objects
-
-AIS anomaly detector contract:
-
-- Input topic: `AIS_FEATURES_TOPIC` (`ais.features.vessel_tracks`)
-- Output topic: `AIS_ANOMALIES_TOPIC` (`ais.anomalies.events`)
-- Score source: realtime encoder inference against `AIS_ENCODER_CHECKPOINT_PATH` + `AIS_MEMORY_DIR`
-
-Example DAG trigger payload (`suspicious_event_validation`):
-
-```json
-{
-    "incident_id": "inc-1234",
-    "lat": 45.25,
-    "lon": 10.55,
-    "timestamp": "2026-03-28T09:00:00Z"
-}
-```
-
-## Additional AIS Data Source (File Replay)
-
-In addition to live WebSocket ingestion, this project now supports replaying AIS data from files into Kafka.
-
-Runner:
-
-- `ingestion/ais_stream/run_file_ingestion.py`
-
-Supported input formats:
-
-- NDJSON (one JSON object per line)
-- JSON array (`[{...}, {...}]`)
-- Single JSON object
-
-Usage:
-
-```bash
-python ingestion/ais_stream/run_file_ingestion.py --input ingestion/ais_stream/dead_letter/see.json
-```
-
-Optional limit for controlled replay:
-
-```bash
-python ingestion/ais_stream/run_file_ingestion.py --input path/to/messages.ndjson --max-messages 1000
-```
-
-Behavior:
-
-- Valid `PositionReport` messages are published to `ais.raw.position_reports`
-- Invalid/non-PositionReport records are routed to `ais.deadletter`
-
-## Additional AIS Data Source (HTTP Polling)
-
-For a real alternate live source (besides WebSocket), use HTTP polling against an AIS provider API.
-
-Runner:
-
-- `ingestion/ais_stream/run_http_ingestion.py`
-
-Required env vars:
-
-- `AIS_HTTP_URL`
-
-Optional env vars:
-
-- `AIS_HTTP_API_KEY`
-- `AIS_HTTP_AUTH_HEADER` (default: `Authorization`)
-- `AIS_HTTP_AUTH_SCHEME` (default: `Bearer`)
-- `AIS_HTTP_POLL_INTERVAL_SEC` (default: `30`)
-- `AIS_HTTP_TIMEOUT_SEC` (default: `20`)
-- `AIS_HTTP_RETRY_ATTEMPTS` (default: `3`)
-- `AIS_HTTP_RETRY_BACKOFF_SEC` (default: `2`)
-
-Run command:
-
-```bash
-python ingestion/ais_stream/run_http_ingestion.py --url https://your-ais-provider.example.com/v1/positions
-```
-
-Notes:
-
-- Supports provider payloads as list or dictionary wrappers (`messages`, `data`, `results`, `items`, `records`).
-- Accepts both AIS-stream-like `PositionReport` objects and flat records (`mmsi`, `lat`, `lon`, `timestamp`) with normalization.
-- Publishes valid normalized records to `ais.raw.position_reports` and sends invalid records to `ais.deadletter`.
+3. **Airflow Setup**:
+   Ensure `AIRFLOW__CORE__DAGS_FOLDER` points to `orchestration/dags`. The `suspicious_event_validation` DAG will automatically pick up trigger events from Kafka.

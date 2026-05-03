@@ -12,7 +12,7 @@ class StreamProcessorConfig:
     deadletter_topic: str = field(default_factory=lambda: os.getenv("AIS_DEADLETTER_TOPIC", "ais.deadletter"))
 
     state_backend: str = field(default_factory=lambda: os.getenv("AIS_STATE_BACKEND", "redis"))
-    redis_url: str = field(default_factory=lambda: os.getenv("AIS_REDIS_URL", "redis://localhost:6379/0"))
+    redis_url: str = field(default_factory=lambda: os.getenv("AIS_REDIS_URL", os.getenv("REDIS_URL", "redis://localhost:6379/0")))
     vessel_window_size: int = field(default_factory=lambda: int(os.getenv("AIS_VESSEL_WINDOW_SIZE", "20")))
     vessel_state_ttl_sec: int = field(default_factory=lambda: int(os.getenv("AIS_VESSEL_STATE_TTL_SEC", "86400")))
     voyage_gap_hours: float = field(default_factory=lambda: float(os.getenv("AIS_VOYAGE_GAP_HOURS", "2.0")))

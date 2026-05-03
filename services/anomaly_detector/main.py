@@ -22,6 +22,8 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+# Suppress noisy Kafka connection logs 
+logging.getLogger("kafka").setLevel(logging.ERROR)
 
 SHUTDOWN = False
 
@@ -68,6 +70,8 @@ def run() -> None:
         score_threshold=cfg.anomaly_score_threshold,
         k_neighbors=cfg.realtime_k_neighbors,
         min_window_points=cfg.realtime_min_window_points,
+        trajectory_window_size=cfg.realtime_trajectory_window_size,
+        score_smoothing_window_size=cfg.realtime_score_smoothing_window_size,
         use_faiss=cfg.realtime_use_faiss,
     )
 
@@ -124,6 +128,8 @@ def run() -> None:
                     discarded += 1
                     continue
 
+                logger.info("🚨 [ANOMALY DETECTED] Vessel: %s, Score: %.4f, Lat: %.4f, Lon: %.4f", 
+                            anomaly_event['vessel_id'], anomaly_event['score'], anomaly_event['lat'], anomaly_event['lon'])
                 _publish(producer, cfg.output_topic, anomaly_event)
                 emitted += 1
 

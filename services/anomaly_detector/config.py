@@ -21,6 +21,8 @@ class AnomalyDetectorConfig:
     memory_dir: str = field(default_factory=lambda: os.getenv("AIS_MEMORY_DIR", "preprocessing/outputs/ais_memory_bank"))
     realtime_min_window_points: int = field(default_factory=lambda: int(os.getenv("AIS_REALTIME_MIN_WINDOW_POINTS", "4")))
     realtime_k_neighbors: int = field(default_factory=lambda: int(os.getenv("AIS_REALTIME_K_NEIGHBORS", "5")))
+    realtime_trajectory_window_size: int = field(default_factory=lambda: int(os.getenv("AIS_REALTIME_TRAJECTORY_WINDOW_SIZE", "30")))
+    realtime_score_smoothing_window_size: int = field(default_factory=lambda: int(os.getenv("AIS_REALTIME_SCORE_SMOOTHING_WINDOW_SIZE", "5")))
     realtime_use_faiss: bool = field(default_factory=lambda: os.getenv("AIS_REALTIME_USE_FAISS", "true").lower() in {"1", "true", "yes", "on"})
 
     poll_timeout_ms: int = field(default_factory=lambda: int(os.getenv("AIS_ANOMALY_POLL_TIMEOUT_MS", "1000")))
