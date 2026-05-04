@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://oilspill:password@db:5432/oilspill_db
+      - AIRFLOW_DB_URL=sqlite:////data/user13/airflow/airflow.db
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - DEBUG=true
+    volumes:
+      - /data/user13/airflow:/data/user13/airflow:ro
+      - /data/user13/oilspill_ugq/oil-spill-detection:/app/data:ro
+    depends_on:
+      - db
+    networks:
+      - oilspill-network
+
+  db:
+    image: postgres:15
+    environment:
+      - POSTGRES_DB=oilspill_db
+      - POSTGRES_USER=oilspill
+      - POSTGRES_PASSWORD=password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - oilspill-network
+
+volumes:
+  postgres_data:
+
+networks:
+  oilspill-network:
+    driver: bridge
