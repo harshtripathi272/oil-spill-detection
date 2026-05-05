@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
 from typing import Optional
+import os
 
 class Settings(BaseSettings):
     # Database settings
@@ -30,5 +31,16 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # If Supabase credentials are provided, construct the database URL
+        if self.supabase_url and self.supabase_service_key:
+            # Extract project ref from Supabase URL
+            project_ref = self.supabase_url.replace("https://", "").replace("http://", "").split(".")[0]
+            # For Supabase, the database URL follows this pattern
+            # We'll need the password from the service key or ask user to provide it
+            # For now, assume the database_url is set directly, or we can modify this
+            pass
 
 settings = Settings()

@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import styles from './layout.module.css';
-import Sidebar from '@/components/Sidebar';
-import Header from '@/components/Header';
+import Sidebar from '../components/Sidebar';
+import Header from '../components/Header';
 
 export const metadata: Metadata = {
   title: 'VesselWatch',

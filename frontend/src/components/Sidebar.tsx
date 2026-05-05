@@ -66,13 +66,13 @@ export default function Sidebar() {
 
       {/* Bottom */}
       <div className={styles.bottomNav}>
-        <Link href="/settings" className={`${styles.bottomItem} ${pathname === '/settings' ? styles.bottomActive : ''}`}>
+        <Link href="/system-health" className={`${styles.bottomItem} ${pathname === '/system-health' ? styles.bottomActive : ''}`}>
           <HeartPulse size={16} />
           <span>System Health</span>
         </Link>
-        <Link href="/settings" className={styles.bottomItem}>
+        <Link href="/settings" className={`${styles.bottomItem} ${pathname === '/settings' ? styles.bottomActive : ''}`}>
           <HelpCircle size={16} />
-          <span>Support</span>
+          <span>Support / Settings</span>
         </Link>
       </div>
     </aside>

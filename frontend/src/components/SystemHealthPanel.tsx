@@ -1,268 +1,277 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Shield, Key, Bell, Users, Settings, Cpu, HardDrive, MemoryStick, MoreVertical } from 'lucide-react';
+import { Shield, Key, Bell, Users, Settings, Cpu, HardDrive, MemoryStick, MoreVertical, Activity, Database, Zap, Server, FileText, CheckCircle, AlertTriangle, XCircle, Search, RefreshCw } from 'lucide-react';
 import styles from './SystemHealthPanel.module.css';
-import { fetchSystemHealth, fetchSystemResources } from '@/lib/api';
+import { fetchSystemHealth, fetchSystemResources, fetchLogFiles, fetchLogFileContent, fetchRecentLogs } from '@/lib/api';
 
-interface User {
-  id: number;
-  username: string;
-  full_name?: string;
-  email?: string;
-  role: string;
-  enabled: boolean;
+/* --- Types --- */
+interface ComponentStatus {
+  component: string;
+  status: 'healthy' | 'warning' | 'error';
+  last_check: string;
+  details: any;
 }
 
+interface SystemHealth {
+  overall_status: 'healthy' | 'warning' | 'error';
+  components: ComponentStatus[];
+  uptime: number;
+  last_updated: string;
+}
+
+const mockUsers = [
+  { id: '1', username: 'admin', full_name: 'Aayush Kumar', email: 'a.kumar@vesselwatch.gov', role: 'Administrator', enabled: true },
+  { id: '2', username: 'analyst1', full_name: 'Sarah Chen', email: 's.chen@vesselwatch.gov', role: 'Lead Analyst', enabled: true },
+  { id: '3', username: 'analyst2', full_name: 'Michael Ross', email: 'm.ross@vesselwatch.gov', role: 'Field Agent', enabled: false },
+];
+
+/* --- Component --- */
 export default function SystemHealthPanel() {
-  const [health, setHealth] = useState<any>(null);
+  const [health, setHealth] = useState<SystemHealth | null>(null);
   const [resources, setResources] = useState<any>(null);
+  const [logFiles, setLogFiles] = useState<any[]>([]);
+  const [selectedLog, setSelectedLog] = useState<string | null>(null);
+  const [logContent, setLogContent] = useState<string>('');
+  const [recentLogs, setRecentLogs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const [healthData, resourceData] = await Promise.all([
-          fetchSystemHealth(),
-          fetchSystemResources(),
-        ]);
-        setHealth(healthData);
-        setResources(resourceData);
-      } catch (err) {
-        setError((err as Error).message);
-      }
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [healthData, resourceData, logFilesData, recentLogsData] = await Promise.all([
+        fetchSystemHealth(),
+        fetchSystemResources(),
+        fetchLogFiles(),
+        fetchRecentLogs()
+      ]);
+      setHealth(healthData);
+      setResources(resourceData);
+      setLogFiles(logFilesData);
+      setRecentLogs(recentLogsData);
+      setError(null);
+    } catch (err) {
+      console.error('Failed to load system data:', err);
+      setError('Failed to sync with backend services. Please check connection.');
+    } finally {
+      setLoading(false);
     }
-    load();
+  };
+
+  useEffect(() => {
+    loadData();
+    const interval = setInterval(loadData, 30000); // 30s refresh
+    return () => clearInterval(interval);
   }, []);
 
-  const mockUsers: User[] = [
-    { id: 1, username: 'j.sterling', full_name: 'J. Sterling', role: 'ADMIN', enabled: true },
-    { id: 2, username: 'm.chen', full_name: 'M. Chen', role: 'ANALYST', enabled: true },
-    { id: 3, username: 't.reynolds', full_name: 'T. Reynolds', role: 'OPERATOR', enabled: false },
-  ];
+  const loadLogContent = async (filename: string) => {
+    try {
+      const data = await fetchLogFileContent(filename, 100);
+      setSelectedLog(filename);
+      setLogContent(data.content);
+    } catch (err) {
+      setError(`Failed to read log file ${filename}`);
+    }
+  };
+
+  /* --- Helpers --- */
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'healthy': return <CheckCircle size={18} className={styles.statusHealthy} />;
+      case 'warning': return <AlertTriangle size={18} className={styles.statusWarning} />;
+      case 'error': return <XCircle size={18} className={styles.statusError} />;
+      default: return <Activity size={18} />;
+    }
+  };
+
+  const getComponentIcon = (component: string) => {
+    switch (component) {
+      case 'database': return <Database size={16} />;
+      case 'cpu': return <Cpu size={16} />;
+      case 'memory': return <MemoryStick size={16} />;
+      case 'disk': return <HardDrive size={16} />;
+      case 'kafka': return <Zap size={16} />;
+      case 'airflow': return <Activity size={16} />;
+      case 'api_server': return <Server size={16} />;
+      default: return <Settings size={16} />;
+    }
+  };
+
+  const formatUptime = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    return `${hours}h ${minutes}m`;
+  };
+
+  const formatBytes = (bytes: number) => {
+    if (bytes === 0) return '0 B';
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + ['B', 'KB', 'MB', 'GB', 'TB'][i];
+  };
 
   return (
-    <div className={`${styles.page} animate-enter`}>
+    <div className={styles.page}>
+      {/* Header */}
       <div className={styles.pageHeader}>
-        <h1>Settings & Administration</h1>
-        <p className={styles.subtitle}>Manage system preferences, security policies, and operational personnel.</p>
-      </div>
-
-      {/* Top Grid: Profile, Security, API */}
-      <div className={styles.topGrid}>
-        {/* Profile Management */}
-        <div className={`${styles.section} card`}>
-          <div className={styles.sectionHeader}>
-            <Users size={16} />
-            <h3>Profile Management</h3>
-          </div>
-          <div className={styles.profileRow}>
-            <div className={styles.profileAvatar}>
-              <img src="https://api.dicebear.com/7.x/initials/svg?seed=JS&backgroundColor=3B82F6&fontSize=40" alt="User" />
-            </div>
-            <div>
-              <div className={styles.profileName}>Cmdr. James Sterling</div>
-              <div className={styles.profileRole}>Global Operations Lead</div>
-            </div>
-          </div>
-          <div className={styles.fieldGroup}>
-            <label className={styles.fieldLabel}>Email Address</label>
-            <input className={styles.fieldInput} defaultValue="j.sterling@vesselwatch.gov" readOnly />
-          </div>
-          <button className={styles.btnOutline}>Update Profile</button>
+        <div>
+          <h1>System Telemetry & Administration</h1>
+          <p className={styles.subtitle}>Real-time infrastructure monitoring and system configuration.</p>
         </div>
-
-        {/* Security Settings */}
-        <div className={`${styles.section} card`}>
-          <div className={styles.sectionHeader}>
-            <Shield size={16} className={styles.iconDanger} />
-            <h3>Security Settings</h3>
-          </div>
-          <div className={styles.settingRow}>
-            <div>
-              <div className={styles.settingTitle}>Multi-Factor Auth (MFA)</div>
-              <div className={styles.settingHint} style={{ color: 'var(--success)' }}>Currently Enforced</div>
-            </div>
-            <button className={styles.configBtn}>Configure</button>
-          </div>
-          <div className={styles.settingRow}>
-            <div>
-              <div className={styles.settingTitle}>Session Timeout (Minutes)</div>
-            </div>
-            <div className={styles.inlineInput}>
-              <input className={styles.fieldInput} defaultValue="15" style={{ width: 60 }} />
-              <button className={styles.applyBtn}>Apply</button>
-            </div>
-          </div>
-          <div className={styles.settingRow}>
-            <div>
-              <div className={styles.settingTitle}>IP Whitelist Config</div>
-            </div>
-          </div>
-          <textarea className={styles.codeArea} defaultValue={"192.168.1.0/24\n10.0.0.0/8"} rows={3} />
-          <button className={styles.editLink}>✏️ Edit Rules</button>
-        </div>
-
-        {/* API Configuration */}
-        <div className={`${styles.section} card`}>
-          <div className={styles.sectionHeader}>
-            <Key size={16} />
-            <h3>API Configuration</h3>
-          </div>
-          <div className={styles.settingRow}>
-            <div className={styles.settingTitle}>Active Key (Read-Only)</div>
-            <span className={styles.activeBadge}>Active</span>
-          </div>
-          <div className={styles.apiKeyBox}>
-            <span className={styles.apiKeyVal}>vw_live_78x91...kl2p</span>
-            <button className={styles.copyBtn}>📋</button>
-          </div>
-          <div className={styles.separator} />
-          <div className={styles.settingTitle}>Usage Quota</div>
-          <div className={styles.settingHint}>Current Billing Cycle</div>
-          <div className={styles.quotaRow}>
-            <span>45,201 / 100k</span>
-          </div>
-          <div className={styles.quotaBar}>
-            <div className={styles.quotaFill} style={{ width: '45%' }} />
-          </div>
-          <button className={styles.btnOutline} style={{ marginTop: 12 }}>📊 View Usage Logs</button>
+        <div className={styles.headerActions}>
+          {loading && <RefreshCw size={16} className="animate-spin" style={{ color: 'var(--accent-primary)' }} />}
+          <button onClick={loadData} className={styles.btnSecondary}>Force Sync</button>
         </div>
       </div>
 
-      {/* Middle Grid: Preferences + Alert Routing */}
-      <div className={styles.midGrid}>
-        {/* Dashboard Preferences */}
-        <div className={`${styles.section} card`}>
-          <div className={styles.sectionHeader}>
-            <Settings size={16} />
-            <h3>Dashboard Preferences</h3>
-          </div>
-          <div className={styles.settingRow}>
-            <div>
-              <div className={styles.settingTitle}>Data Refresh Rate</div>
-              <div className={styles.settingHint}>WebSocket sync interval</div>
+      <div className={styles.dashboardGrid}>
+        {/* Left Column: Health & Logs */}
+        <div className={styles.mainCol}>
+          {/* System Health Overview */}
+          <div className={`${styles.panel} card`}>
+            <div className={styles.panelHeader}>
+              <Activity size={20} />
+              <h3>Service Infrastructure Health</h3>
+              {health && (
+                <div className={`${styles.statusPill} ${styles[health.overall_status]}`}>
+                  {health.overall_status.toUpperCase()}
+                </div>
+              )}
             </div>
-            <select className={styles.selectField}>
-              <option>30 Seconds</option>
-              <option>15 Seconds</option>
-              <option>60 Seconds</option>
-            </select>
-          </div>
-          <div className={styles.settingRow}>
-            <div>
-              <div className={styles.settingTitle}>High-Contrast Mode</div>
-              <div className={styles.settingHint}>Enhance map markers</div>
-            </div>
-            <label className={styles.toggle}>
-              <input type="checkbox" defaultChecked />
-              <span className={styles.toggleSlider} />
-            </label>
-          </div>
-        </div>
 
-        {/* Alert Routing */}
-        <div className={`${styles.section} card`}>
-          <div className={styles.sectionHeader}>
-            <Bell size={16} />
-            <h3>Alert Routing</h3>
-          </div>
-          <div className={styles.settingRow}>
-            <div>
-              <div className={styles.settingTitle}>High-Confidence Events</div>
-              <div className={styles.settingHint}>In-app & Email</div>
+            <div className={styles.metricsGrid}>
+              {health?.components.map((c) => (
+                <div key={c.component} className={styles.metricItem}>
+                  <div className={styles.metricLabel}>
+                    {getComponentIcon(c.component)}
+                    <span>{c.component.replace('_', ' ').toUpperCase()}</span>
+                  </div>
+                  <div className={styles.metricStatus}>
+                    {getStatusIcon(c.status)}
+                    <span>{new Date(c.last_check).toLocaleTimeString()}</span>
+                  </div>
+                </div>
+              ))}
             </div>
-            <label className={styles.toggle}>
-              <input type="checkbox" defaultChecked />
-              <span className={styles.toggleSlider} />
-            </label>
-          </div>
-          <div className={styles.settingRow}>
-            <div>
-              <div className={styles.settingTitle}>System Health Warnings</div>
-              <div className={styles.settingHint}>In-app only</div>
-            </div>
-            <label className={styles.toggle}>
-              <input type="checkbox" defaultChecked />
-              <span className={styles.toggleSlider} />
-            </label>
           </div>
 
-          {/* System resources */}
-          {resources && (
-            <>
-              <div className={styles.separator} />
-              <div className={styles.sysResGrid}>
-                <div className={styles.resItem}>
-                  <Cpu size={14} />
-                  <span>CPU</span>
-                  <span className={styles.resVal}>{resources.cpu.usage_percent}%</span>
-                </div>
-                <div className={styles.resItem}>
-                  <MemoryStick size={14} />
-                  <span>Memory</span>
-                  <span className={styles.resVal}>{((resources.memory.used / resources.memory.total) * 100).toFixed(0)}%</span>
-                </div>
-                <div className={styles.resItem}>
-                  <HardDrive size={14} />
-                  <span>Disk</span>
-                  <span className={styles.resVal}>{resources.disk.percent}%</span>
-                </div>
+          {/* Log Explorer */}
+          <div className={`${styles.panel} card`}>
+            <div className={styles.panelHeader}>
+              <FileText size={20} />
+              <h3>System Log Files</h3>
+              <div className={styles.headerControl}>
+                <Search size={14} />
+                <input type="text" placeholder="Filter logs..." className={styles.smallInput} />
               </div>
-            </>
+            </div>
+            
+            <div className={styles.logContainer}>
+              <aside className={styles.logSidebar}>
+                {logFiles.map(file => (
+                  <button 
+                    key={file.filename}
+                    onClick={() => loadLogContent(file.filename)}
+                    className={`${styles.logFileBtn} ${selectedLog === file.filename ? styles.active : ''}`}
+                  >
+                    <span className={styles.fileName}>{file.service}</span>
+                    <span className={styles.fileMeta}>{formatBytes(file.size)}</span>
+                  </button>
+                ))}
+              </aside>
+              <main className={styles.logContent}>
+                <pre>
+                  {logContent || "// Select a log file to view contents"}
+                </pre>
+              </main>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Column: Resources & Admin */}
+        <div className={styles.sideCol}>
+          {/* Resource Usage */}
+          {resources && (
+            <div className={`${styles.panel} card`}>
+              <div className={styles.panelHeader}>
+                <Cpu size={20} />
+                <h3>Infrastructure Resources</h3>
+              </div>
+              <div className={styles.resourceGroup}>
+                <div className={styles.resRow}>
+                  <span>CPU Usage</span>
+                  <span className={styles.resPercentage}>{resources.cpu.usage_percent.toFixed(1)}%</span>
+                </div>
+                <div className={styles.progressBar}><div className={styles.progressFill} style={{ width: `${resources.cpu.usage_percent}%` }} /></div>
+                
+                <div className={styles.resRow}>
+                  <span>Memory Usage</span>
+                  <span className={styles.resPercentage}>{((resources.memory.used / resources.memory.total) * 100).toFixed(1)}%</span>
+                </div>
+                <div className={styles.progressBar}><div className={styles.progressFill} style={{ width: `${(resources.memory.used / resources.memory.total) * 100}%` }} /></div>
+
+                <div className={styles.resRow}>
+                  <span>Disk Capacity</span>
+                  <span className={styles.resPercentage}>{resources.disk.percent.toFixed(1)}%</span>
+                </div>
+                <div className={styles.progressBar}><div className={styles.progressFill} style={{ width: `${resources.disk.percent}%` }} /></div>
+              </div>
+            </div>
           )}
 
-          {error && <div className={styles.errorSmall}>{error}</div>}
+          {/* Admin Tools */}
+          <div className={`${styles.panel} card`}>
+            <div className={styles.panelHeader}>
+              <Shield size={20} />
+              <h3>Security & Administration</h3>
+            </div>
+            <div className={styles.adminActionList}>
+              <button className={styles.actionItem}>
+                <Key size={14} />
+                <span>Rotate API Keys</span>
+              </button>
+              <button className={styles.actionItem}>
+                <Database size={14} />
+                <span>Database Maintenance</span>
+              </button>
+              <button className={styles.actionItem}>
+                <Zap size={14} />
+                <span>Re-sync Brokers</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Connected Operators */}
+          <div className={`${styles.panel} card`}>
+            <div className={styles.panelHeader}>
+              <Users size={20} />
+              <h3>Active Operators</h3>
+            </div>
+            <div className={styles.userList}>
+              {mockUsers.map(user => (
+                <div key={user.id} className={styles.userRow}>
+                   <div className={styles.userAvatar}>
+                    {user.full_name.split(' ').map(n => n[0]).join('')}
+                   </div>
+                   <div className={styles.userInfo}>
+                    <div className={styles.userName}>{user.full_name}</div>
+                    <div className={styles.userRole}>{user.role}</div>
+                   </div>
+                   <div className={`${styles.userStatus} ${user.enabled ? styles.active : styles.offline}`} />
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* User Management */}
-      <div className={`${styles.userSection} card`}>
-        <div className={styles.userHeader}>
-          <div className={styles.sectionHeader}>
-            <Users size={16} />
-            <h3>User Management</h3>
-          </div>
-          <button className={styles.addUserBtn}>👤+ Add User</button>
+      {error && (
+        <div className={styles.errorBanner}>
+          <AlertTriangle size={16} />
+          <span>{error}</span>
+          <button onClick={() => setError(null)} className={styles.closeBtn}>×</button>
         </div>
-        <table className={styles.userTable}>
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Role</th>
-              <th>Status</th>
-              <th>Last Login</th>
-              <th style={{ width: 40 }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {mockUsers.map((user) => (
-              <tr key={user.id}>
-                <td>
-                  <div className={styles.userCell}>
-                    <div className={styles.userAvatar}>
-                      {user.full_name?.split(' ').map(n => n[0]).join('') || '?'}
-                    </div>
-                    <span>{user.full_name || user.username}</span>
-                  </div>
-                </td>
-                <td>
-                  <span className={styles.roleBadge}>{user.role}</span>
-                </td>
-                <td>
-                  <span className={user.enabled ? styles.statusActive : styles.statusOffline}>
-                    ● {user.enabled ? 'Active' : 'Offline'}
-                  </span>
-                </td>
-                <td className={styles.monoSmall}>2023-10-27 14:02Z</td>
-                <td>
-                  <button className={styles.moreBtn}><MoreVertical size={16} /></button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      )}
     </div>
   );
 }

@@ -9,7 +9,7 @@ from sqlalchemy import desc
 
 router = APIRouter()
 
-@router.get("/", response_model=List[AlertSchema])
+@router.get("", response_model=List[AlertSchema])
 async def list_alerts(limit: int = 20, db: Session = Depends(get_db)):
     alerts = db.query(Alert).order_by(desc(Alert.created_at)).limit(limit).all()
     if not alerts:
@@ -40,7 +40,7 @@ async def acknowledge_alert(alert_id: int, db: Session = Depends(get_db)):
     db.refresh(alert)
     return {"message": "Alert acknowledged", "id": alert.id}
 
-@router.post("/")
+@router.post("")
 async def create_alert(
     incident_id: str,
     level: str,

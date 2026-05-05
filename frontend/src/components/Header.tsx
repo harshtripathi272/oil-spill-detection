@@ -10,7 +10,7 @@ const navTabs = [
   { label: 'Map', href: '/map' },
   { label: 'Incidents', href: '/incidents' },
   { label: 'Analytics', href: '/analytics' },
-  { label: 'System Health', href: '/settings' },
+  { label: 'System Health', href: '/system-health' },
   { label: 'Settings', href: '/settings' },
 ];
 
