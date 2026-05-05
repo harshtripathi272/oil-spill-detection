@@ -5,7 +5,7 @@ import logging
 from typing import Any, Dict, Optional
 
 from airflow.exceptions import AirflowException
-from airflow.sensors.base import BaseSensorOperator
+from airflow.sdk.bases.sensor import BaseSensorOperator
 from kafka import KafkaConsumer
 
 

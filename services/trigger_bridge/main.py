@@ -2,10 +2,10 @@ import json
 import logging
 import os
 import signal
+import subprocess
 import sys
 from typing import Any, Dict
 
-import requests
 from dotenv import load_dotenv
 from kafka import KafkaConsumer, KafkaProducer
 
@@ -48,6 +48,30 @@ def _build_consumer(cfg: TriggerBridgeConfig) -> KafkaConsumer:
     )
 
 
+def _skip_old_messages(consumer: KafkaConsumer) -> None:
+    """Advance the consumer to the end of the topic so retained records are ignored."""
+    consumer.poll(timeout_ms=1000)
+    partitions = consumer.assignment()
+    if not partitions:
+        consumer.poll(timeout_ms=1000)
+        partitions = consumer.assignment()
+
+    if not partitions:
+        logger.warning(
+            "Could not determine Kafka partitions for %s; retained messages may still be consumed.",
+            consumer.subscription(),
+        )
+        return
+
+    consumer.seek_to_end(*partitions)
+    consumer.commit()
+    logger.info(
+        "Skipped old retained messages for topic %s by advancing offsets to end for partitions %s.",
+        list(consumer.subscription()),
+        partitions,
+    )
+
+
 def _build_producer(cfg: TriggerBridgeConfig) -> KafkaProducer:
     return KafkaProducer(
         bootstrap_servers=cfg.kafka_bootstrap_servers,
@@ -63,7 +87,7 @@ def _publish(producer: KafkaProducer, topic: str, payload: Dict[str, Any]) -> No
 
 
 def _trigger_airflow_dag(cfg: TriggerBridgeConfig, trigger_event: Dict[str, Any]) -> bool:
-    """Trigger the Airflow DAG with the trigger event as configuration.
+    """Trigger the Airflow DAG using CLI with the trigger event as configuration.
     
     Args:
         cfg: TriggerBridgeConfig instance
@@ -76,34 +100,42 @@ def _trigger_airflow_dag(cfg: TriggerBridgeConfig, trigger_event: Dict[str, Any]
         return True
     
     try:
-        url = f"{cfg.airflow_api_base_url}/dags/{cfg.airflow_dag_id}/dagRuns"
-        headers = {"Content-Type": "application/json"}
-        payload = {"conf": trigger_event}
+        # Use Airflow CLI to trigger the DAG
+        cmd = [
+            cfg.airflow_executable_path,
+            "dags", "trigger",
+            cfg.airflow_dag_id,
+            "--conf", json.dumps(trigger_event)
+        ]
         
-        response = requests.post(
-            url,
-            json=payload,
-            headers=headers,
-            auth=(cfg.airflow_username, cfg.airflow_password),
-            timeout=10,
+        # Set environment for Airflow CLI
+        env = os.environ.copy()
+        env["AIRFLOW_HOME"] = cfg.airflow_home
+        
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=env
         )
         
-        if response.status_code in (200, 201):
+        if result.returncode == 0:
             logger.info("✅ [AIRFLOW TRIGGERED] DAG run created for event: %s", trigger_event.get("incident_id"))
             return True
         else:
             logger.warning(
-                "⚠️ [AIRFLOW TRIGGER FAILED] Status: %d, Response: %s",
-                response.status_code,
-                response.text[:200],
+                "⚠️ [AIRFLOW TRIGGER FAILED] CLI exit code: %d, stderr: %s",
+                result.returncode,
+                result.stderr[:200],
             )
             return False
             
-    except requests.exceptions.Timeout:
-        logger.warning("⚠️ [AIRFLOW TRIGGER TIMEOUT] Could not reach Airflow API at %s", cfg.airflow_api_base_url)
+    except subprocess.TimeoutExpired:
+        logger.warning("⚠️ [AIRFLOW TRIGGER TIMEOUT] CLI command timed out")
         return False
-    except requests.exceptions.ConnectionError:
-        logger.warning("⚠️ [AIRFLOW TRIGGER ERROR] Connection failed to %s", cfg.airflow_api_base_url)
+    except FileNotFoundError:
+        logger.warning("⚠️ [AIRFLOW TRIGGER ERROR] Airflow executable not found at: %s", cfg.airflow_executable_path)
         return False
     except Exception as exc:
         logger.warning("⚠️ [AIRFLOW TRIGGER ERROR] %s", exc)
@@ -141,6 +173,7 @@ def run() -> None:
             bootstrap_servers=cfg.kafka_bootstrap_servers,
             dlq_topic=cfg.deadletter_topic,
         )
+        _skip_old_messages(consumer)
     except Exception as exc:
         logger.critical("Failed to initialize trigger bridge clients: %s", exc)
         return

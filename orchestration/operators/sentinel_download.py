@@ -23,11 +23,13 @@ class SentinelDownloadOperator(BaseOperator):
     def __init__(
         self,
         download_dir: str = "/tmp/sentinel_data",
+        max_downloads: int = 1,
         *args,
         **kwargs
     ):
         super().__init__(*args, **kwargs)
         self.download_dir = download_dir
+        self.max_downloads = max_downloads
 
     def execute(self, context):
         # Retrieve product list from XCom (assuming the upstream task ID is 'search_sentinel')
@@ -40,8 +42,16 @@ class SentinelDownloadOperator(BaseOperator):
             raise AirflowException("Expected search_sentinel XCom payload to be a list of product dicts.")
         
         if not products:
-            logging.info("No products to download.")
+            logging.info("ℹ️ No products to download (search returned empty).")
             return []
+
+        # Limit to max_downloads products
+        original_count = len(products)
+        products = products[:self.max_downloads]
+        if len(products) < original_count:
+            logging.info(f"⚠️ Limiting downloads to {self.max_downloads} of {original_count} available products")
+
+        logging.info(f"📥 Starting download of {len(products)} Sentinel-1 products to {self.download_dir}")
 
         downloaded_paths = []
         os.makedirs(self.download_dir, exist_ok=True)
@@ -50,14 +60,18 @@ class SentinelDownloadOperator(BaseOperator):
         password = os.getenv("EARTHDATA_PASSWORD")
 
         if not username or not password:
-            raise ValueError(
-                "Missing Earthdata credentials. Set EARTHDATA_USERNAME and EARTHDATA_PASSWORD environment variables."
-            )
+            error_msg = "❌ Missing Earthdata credentials. Set EARTHDATA_USERNAME and EARTHDATA_PASSWORD environment variables."
+            logging.error(error_msg)
+            raise ValueError(error_msg)
 
         try:
+            logging.info("🔐 Authenticating with Earthdata...")
             session = asf.ASFSession().auth_with_creds(username, password)
+            logging.info("✅ Earthdata authentication successful")
         except Exception as exc:
-            raise AirflowException(f"Failed to initialize ASF authenticated session: {exc}") from exc
+            error_msg = f"❌ Failed to initialize ASF authenticated session: {exc}"
+            logging.error(error_msg)
+            raise AirflowException(error_msg) from exc
 
         for product in products:
             if not isinstance(product, dict):
