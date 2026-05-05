@@ -1,83 +1,129 @@
 .sidebar {
-  width: 260px;
+  width: 200px;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid rgba(255, 255, 255, 0.05);
-  background: var(--neutral-dark);
-  z-index: 10;
-  border-radius: 0;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-primary);
+  flex-shrink: 0;
 }
 
+/* Brand */
 .brand {
-  height: 72px;
-  display: flex;
-  align-items: center;
-  padding: 0 24px;
-  gap: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 20px 20px 16px;
 }
 
-.logoIcon {
-  width: 32px;
-  height: 32px;
-  background: linear-gradient(135deg, var(--primary-blue), var(--accent-cyan));
-  border-radius: 8px;
-  box-shadow: 0 0 12px rgba(0, 217, 255, 0.4);
-}
-
-.brandText {
-  font-size: 20px;
+.brandName {
+  font-size: 18px;
   font-weight: 700;
-  color: var(--neutral-light);
-  letter-spacing: -0.5px;
+  color: var(--text-primary);
+  letter-spacing: -0.3px;
 }
 
-.navigation {
-  padding: 24px 12px;
+/* Section */
+.section {
+  padding: 0 20px 12px;
+}
+
+.sectionLabel {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--status-detected);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 2px;
+}
+
+.sectionHint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Region Nav */
+.regionNav {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 1px;
+  padding: 0 8px;
   flex: 1;
 }
 
-.navItem {
+.regionItem {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  border-radius: 8px;
-  color: #A0AAB4;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: 13px;
   font-weight: 500;
-  transition: all 0.2s ease;
-  background: transparent;
-  border: none;
-  width: 100%;
-  cursor: pointer;
-  text-align: left;
-  font-size: 14px;
+  transition: background 0.15s, color 0.15s;
 }
 
-.navItem:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--neutral-light);
+.regionItem:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
 }
 
-.navItem.active {
-  background: rgba(0, 102, 204, 0.15);
-  color: var(--accent-cyan);
-  border-left: 3px solid var(--accent-cyan);
+.regionActive {
+  background: var(--accent-blue) !important;
+  color: white !important;
 }
 
-.navItem.active svg {
-  color: var(--accent-cyan);
+.regionActive svg {
+  color: white;
 }
 
-.bottomNav {
+/* New Incident */
+.actionArea {
   padding: 12px;
 }
 
-.navDivider {
-  height: 1px;
-  background: rgba(255, 255, 255, 0.05);
-  margin: 0 12px 12px 12px;
+.newIncidentBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px;
+  background: var(--accent-blue);
+  border: none;
+  border-radius: var(--radius-md);
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  transition: background 0.15s;
+}
+
+.newIncidentBtn:hover {
+  background: #2563EB;
+}
+
+/* Bottom */
+.bottomNav {
+  border-top: 1px solid var(--border-primary);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.bottomItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.15s, color 0.15s;
+}
+
+.bottomItem:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+}
+
+.bottomActive {
+  color: var(--accent-cyan);
 }

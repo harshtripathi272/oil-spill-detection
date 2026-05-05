@@ -1,0 +1,351 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ── Filter Bar ─────────────────────────── */
+.filterBar {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.filterGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filterLabel {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.chipRow {
+  display: flex;
+  gap: 4px;
+}
+
+.chip {
+  padding: 4px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--border-primary);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.chip:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.chipActive {
+  background: var(--accent-blue) !important;
+  border-color: var(--accent-blue) !important;
+  color: white !important;
+}
+
+.sliderWrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.slider {
+  width: 100px;
+  accent-color: var(--accent-cyan);
+  cursor: pointer;
+}
+
+.sliderVal {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--accent-cyan);
+  min-width: 36px;
+}
+
+.select {
+  padding: 5px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.moreFilters {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  background: transparent;
+  border: 1px solid var(--border-active);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 12px;
+  margin-left: auto;
+}
+
+.moreFilters:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* ── Table ───────────────────────────────── */
+.tableWrap {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-primary);
+  background: var(--bg-card);
+}
+
+.table td {
+  padding: 10px 16px;
+  font-size: 13px;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.row {
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.row:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.rowExpanded {
+  background: rgba(59, 130, 246, 0.05);
+}
+
+.rowSelected {
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.incId {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.checkbox {
+  accent-color: var(--accent-blue);
+  cursor: pointer;
+}
+
+.confCell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.confBar {
+  width: 64px;
+  height: 6px;
+  background: var(--bg-input);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.confFill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s;
+}
+
+.confVal {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.chevron {
+  color: var(--text-dim);
+  transition: transform 0.2s;
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+/* ── Detail Row ──────────────────────────── */
+.detailRow td {
+  background: var(--bg-secondary);
+  padding: 0 !important;
+  border-bottom: 2px solid var(--accent-blue);
+}
+
+.detailGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr auto;
+  gap: 20px;
+  padding: 18px 24px;
+  align-items: start;
+}
+
+.detailSection h4 {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+
+.detailValue {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.detailActions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.btnPrimary {
+  padding: 7px 16px;
+  background: var(--accent-blue);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.btnSecondary {
+  padding: 7px 16px;
+  background: transparent;
+  border: 1px solid var(--success);
+  border-radius: var(--radius-sm);
+  color: var(--success);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.btnOutline {
+  padding: 7px 16px;
+  background: transparent;
+  border: 1px solid var(--border-active);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.btnPrimary:hover { background: #2563EB; }
+.btnSecondary:hover { background: rgba(16, 185, 129, 0.1); }
+.btnOutline:hover { background: rgba(255, 255, 255, 0.04); }
+
+.analystNotes {
+  padding: 12px 24px 18px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.analystNotes h4 {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
+.analystNotes p {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  background: var(--bg-card);
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-primary);
+}
+
+/* ── Table Footer ────────────────────────── */
+.tableFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-primary);
+  background: var(--bg-card);
+}
+
+.footerInfo {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.footerActions {
+  display: flex;
+  gap: 8px;
+}
+
+.btnExport {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: transparent;
+  border: 1px solid var(--border-active);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.btnUpdateStatus {
+  padding: 6px 14px;
+  background: var(--accent-blue);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.btnExport:disabled,
+.btnUpdateStatus:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.loading {
+  padding: 40px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.error {
+  padding: 16px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-md);
+  color: #F87171;
+}

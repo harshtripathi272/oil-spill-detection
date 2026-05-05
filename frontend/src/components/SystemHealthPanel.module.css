@@ -1,0 +1,440 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.pageHeader h1 {
+  font-size: 22px;
+  margin-bottom: 4px;
+}
+
+.subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* ── Top Grid ────────────────────────────── */
+.topGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 14px;
+}
+
+.section {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+}
+
+.sectionHeader h3 {
+  margin-bottom: 0;
+  font-size: 14px;
+}
+
+.iconDanger { color: var(--danger); }
+
+/* Profile */
+.profileRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.profileAvatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid var(--border-active);
+}
+
+.profileAvatar img {
+  width: 100%;
+  height: 100%;
+}
+
+.profileName {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.profileRole {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Fields */
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fieldLabel {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.fieldInput {
+  padding: 7px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.fieldInput:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+}
+
+/* Buttons */
+.btnOutline {
+  padding: 8px 14px;
+  background: transparent;
+  border: 1px solid var(--border-active);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: center;
+}
+
+.btnOutline:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.configBtn {
+  padding: 4px 12px;
+  background: transparent;
+  border: none;
+  color: var(--accent-blue);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.applyBtn {
+  padding: 6px 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-active);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.editLink {
+  background: none;
+  border: none;
+  color: var(--accent-blue);
+  font-size: 12px;
+  text-align: left;
+  padding: 0;
+}
+
+/* Setting Rows */
+.settingRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settingTitle {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.settingHint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.inlineInput {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+/* Toggle */
+.toggle {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  display: inline-block;
+}
+
+.toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggleSlider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background: var(--border-active);
+  border-radius: 11px;
+  transition: background 0.2s;
+}
+
+.toggleSlider::before {
+  content: '';
+  position: absolute;
+  height: 16px;
+  width: 16px;
+  left: 3px;
+  bottom: 3px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+.toggle input:checked + .toggleSlider {
+  background: var(--accent-blue);
+}
+
+.toggle input:checked + .toggleSlider::before {
+  transform: translateX(18px);
+}
+
+/* API Key */
+.apiKeyBox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  padding: 7px 10px;
+}
+
+.apiKeyVal {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex: 1;
+}
+
+.copyBtn {
+  background: none;
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.activeBadge {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--success);
+}
+
+.separator {
+  height: 1px;
+  background: var(--border-primary);
+}
+
+.quotaRow {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  text-align: right;
+  color: var(--text-secondary);
+}
+
+.quotaBar {
+  height: 6px;
+  background: var(--bg-input);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.quotaFill {
+  height: 100%;
+  background: var(--accent-blue);
+  border-radius: 3px;
+}
+
+.selectField {
+  padding: 5px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.codeArea {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  resize: vertical;
+}
+
+.codeArea:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+}
+
+/* ── Mid Grid ────────────────────────────── */
+.midGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.sysResGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+
+.resItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.resVal {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.errorSmall {
+  font-size: 12px;
+  color: var(--danger);
+  padding: 6px;
+  background: rgba(239, 68, 68, 0.08);
+  border-radius: var(--radius-sm);
+}
+
+/* ── User Management ─────────────────────── */
+.userSection {
+  display: flex;
+  flex-direction: column;
+}
+
+.userHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.addUserBtn {
+  padding: 6px 14px;
+  background: transparent;
+  border: 1px solid var(--accent-blue);
+  border-radius: var(--radius-md);
+  color: var(--accent-blue);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.addUserBtn:hover {
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.userTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.userTable th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.userTable td {
+  padding: 12px 18px;
+  font-size: 13px;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.userCell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.userAvatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--accent-blue);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.roleBadge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-active);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.statusActive {
+  font-size: 12px;
+  color: var(--success);
+}
+
+.statusOffline {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.monoSmall {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.moreBtn {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 4px;
+}
+
+.moreBtn:hover {
+  color: var(--text-primary);
+}

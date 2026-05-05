@@ -17,7 +17,7 @@ class Incident(Base):
     processed_image_path = Column(String, nullable=True)
     model_version = Column(String, nullable=True)
     processing_time = Column(Float, nullable=True)  # Time taken for processing in seconds
-    metadata = Column(JSON, nullable=True)  # Additional metadata
+    extra_metadata = Column(JSON, nullable=True)  # Additional metadata
 
     # Relationships
     dag_runs = relationship("DagRun", back_populates="incident")
@@ -60,7 +60,7 @@ class Metric(Base):
     value = Column(Float, nullable=False)
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
     category = Column(String, nullable=False)  # system, model, processing, etc.
-    metadata = Column(JSON, nullable=True)
+    extra_metadata = Column(JSON, nullable=True)
 
 class SystemStatus(Base):
     __tablename__ = "system_status"

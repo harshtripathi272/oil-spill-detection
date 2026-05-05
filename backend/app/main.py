@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import engine
 from app.models import Base
-from app.routers import dashboard, incidents, metrics, system
+from app.routers import dashboard, incidents, metrics, system, alerts, realtime, users
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -30,6 +30,9 @@ app.include_router(dashboard.router, prefix="/api/v1/dashboard", tags=["dashboar
 app.include_router(incidents.router, prefix="/api/v1/incidents", tags=["incidents"])
 app.include_router(metrics.router, prefix="/api/v1/metrics", tags=["metrics"])
 app.include_router(system.router, prefix="/api/v1/system", tags=["system"])
+app.include_router(alerts.router, prefix="/api/v1/alerts", tags=["alerts"])
+app.include_router(users.router, prefix="/api/v1/users", tags=["users"])
+app.include_router(realtime.router, prefix="/ws", tags=["realtime"])
 
 @app.get("/health")
 async def health_check():

@@ -1,51 +1,79 @@
+'use client';
+
 import Link from 'next/link';
-import { 
-  LayoutDashboard, 
-  Map, 
-  AlertTriangle, 
-  BarChart3, 
-  Settings, 
-  LogOut 
+import { usePathname } from 'next/navigation';
+import {
+  Globe,
+  Anchor,
+  Waves,
+  Compass,
+  Snowflake,
+  Plus,
+  HeartPulse,
+  HelpCircle,
 } from 'lucide-react';
 import styles from './Sidebar.module.css';
 
+const regions = [
+  { label: 'Global View', icon: Globe, href: '/' },
+  { label: 'North Atlantic', icon: Anchor, href: '/?region=north-atlantic' },
+  { label: 'South Pacific', icon: Waves, href: '/?region=south-pacific' },
+  { label: 'Mediterranean', icon: Compass, href: '/?region=mediterranean' },
+  { label: 'Arctic Ops', icon: Snowflake, href: '/?region=arctic' },
+];
+
 export default function Sidebar() {
+  const pathname = usePathname();
+  const isHome = pathname === '/';
+
   return (
-    <aside className={`${styles.sidebar} glass-panel`}>
+    <aside className={styles.sidebar}>
+      {/* Brand */}
       <div className={styles.brand}>
-        <div className={styles.logoIcon}></div>
-        <div className={styles.brandText}>VesselWatch</div>
+        <span className={styles.brandName}>VesselWatch</span>
       </div>
 
-      <nav className={styles.navigation}>
-        <Link href="/" className={`${styles.navItem} ${styles.active}`}>
-          <LayoutDashboard size={20} />
-          <span>Overview</span>
-        </Link>
-        <Link href="/map" className={styles.navItem}>
-          <Map size={20} />
-          <span>Map View</span>
-        </Link>
-        <Link href="/incidents" className={styles.navItem}>
-          <AlertTriangle size={20} />
-          <span>Incidents</span>
-        </Link>
-        <Link href="/analytics" className={styles.navItem}>
-          <BarChart3 size={20} />
-          <span>Analytics</span>
-        </Link>
+      {/* Regional Filters */}
+      <div className={styles.section}>
+        <h4 className={styles.sectionLabel}>Regional Filters</h4>
+        <p className={styles.sectionHint}>Active Surveillance Zones</p>
+      </div>
+
+      <nav className={styles.regionNav}>
+        {regions.map((r) => {
+          const Icon = r.icon;
+          const isActive = isHome && (r.href === '/' ? !new URLSearchParams().has('region') : false);
+          return (
+            <Link
+              key={r.label}
+              href={r.href}
+              className={`${styles.regionItem} ${r.href === '/' && isHome ? styles.regionActive : ''}`}
+            >
+              <Icon size={16} />
+              <span>{r.label}</span>
+            </Link>
+          );
+        })}
       </nav>
 
-      <div className={styles.bottomNav}>
-        <div className={styles.navDivider}></div>
-        <Link href="/settings" className={styles.navItem}>
-          <Settings size={20} />
-          <span>System Settings</span>
-        </Link>
-        <button className={styles.navItem}>
-          <LogOut size={20} />
-          <span>Logout</span>
+      {/* New Incident */}
+      <div className={styles.actionArea}>
+        <button className={styles.newIncidentBtn}>
+          <Plus size={16} />
+          <span>New Incident</span>
         </button>
+      </div>
+
+      {/* Bottom */}
+      <div className={styles.bottomNav}>
+        <Link href="/settings" className={`${styles.bottomItem} ${pathname === '/settings' ? styles.bottomActive : ''}`}>
+          <HeartPulse size={16} />
+          <span>System Health</span>
+        </Link>
+        <Link href="/settings" className={styles.bottomItem}>
+          <HelpCircle size={16} />
+          <span>Support</span>
+        </Link>
       </div>
     </aside>
   );
