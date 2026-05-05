@@ -1,0 +1,96 @@
+:root {
+  /* Colors */
+  --primary-blue: #0066CC;
+  --accent-cyan: #00D9FF;
+  --success-green: #00CC66;
+  --warning-orange: #FF9900;
+  --critical-red: #FF3333;
+  --neutral-dark: #0F1419;
+  --neutral-darker: #0A0D10;
+  --neutral-light: #E8EFF8;
+  --shadow-color: rgba(0, 102, 204, 0.2);
+
+  /* Status */
+  --status-detected: var(--warning-orange);
+  --status-confirmed: var(--critical-red);
+  --status-false-pos: #666666;
+  --status-resolved: var(--success-green);
+
+  /* Typography */
+  --font-sans: 'Inter', -apple-system, sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+}
+
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+body {
+  background-color: var(--neutral-dark);
+  color: var(--neutral-light);
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Glassmorphism effects */
+.glass-panel {
+  background: rgba(20, 25, 32, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+.text-gradient {
+  background: linear-gradient(90deg, var(--neutral-light), var(--accent-cyan));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Responsive typography */
+h1, h2, h3, h4 {
+  font-weight: 600;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-enter {
+  animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.status-badge::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.status-badge.confirmed::before { background-color: var(--status-confirmed); box-shadow: 0 0 8px var(--status-confirmed); }
+.status-badge.detected::before { background-color: var(--status-detected); }
+.status-badge.false-pos::before { background-color: var(--status-false-pos); }
+.status-badge.resolved::before { background-color: var(--status-resolved); }
+

@@ -1,0 +1,83 @@
+.sidebar {
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--neutral-dark);
+  z-index: 10;
+  border-radius: 0;
+}
+
+.brand {
+  height: 72px;
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  gap: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.logoIcon {
+  width: 32px;
+  height: 32px;
+  background: linear-gradient(135deg, var(--primary-blue), var(--accent-cyan));
+  border-radius: 8px;
+  box-shadow: 0 0 12px rgba(0, 217, 255, 0.4);
+}
+
+.brandText {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--neutral-light);
+  letter-spacing: -0.5px;
+}
+
+.navigation {
+  padding: 24px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  color: #A0AAB4;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  background: transparent;
+  border: none;
+  width: 100%;
+  cursor: pointer;
+  text-align: left;
+  font-size: 14px;
+}
+
+.navItem:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--neutral-light);
+}
+
+.navItem.active {
+  background: rgba(0, 102, 204, 0.15);
+  color: var(--accent-cyan);
+  border-left: 3px solid var(--accent-cyan);
+}
+
+.navItem.active svg {
+  color: var(--accent-cyan);
+}
+
+.bottomNav {
+  padding: 12px;
+}
+
+.navDivider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.05);
+  margin: 0 12px 12px 12px;
+}

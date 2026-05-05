@@ -1,0 +1,203 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  height: 100%;
+}
+
+.header h1 {
+  font-size: 28px;
+}
+
+.mapContainer {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px;
+}
+
+.mapToolsTop {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  right: 20px;
+  display: flex;
+  justify-content: space-between;
+  z-index: 10;
+}
+
+.filterBar {
+  display: flex;
+  gap: 12px;
+  background: rgba(15, 20, 25, 0.85);
+  backdrop-filter: blur(8px);
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.filterBtn {
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--neutral-light);
+  cursor: pointer;
+}
+
+.filterBtn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.searchInput {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  padding: 8px 12px;
+  color: white;
+  width: 200px;
+  font-size: 13px;
+}
+
+.searchInput:focus { outline: none; border-color: var(--primary-blue); }
+
+.mapActions {
+  display: flex;
+  gap: 8px;
+}
+
+.actionBtn {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 20, 25, 0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: white;
+  cursor: pointer;
+}
+
+.actionBtn:hover { background: rgba(255, 255, 255, 0.1); }
+
+.mapMock {
+  flex: 1;
+  background-color: #1A232D;
+  background-image: 
+    linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+  background-size: 40px 40px;
+  position: relative;
+}
+
+.mapOverlay {
+  position: absolute;
+  inset: 0;
+}
+
+.marker {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  cursor: pointer;
+  filter: drop-shadow(0 4px 8px rgba(0,0,0,0.5));
+}
+
+.markerRed { color: var(--critical-red); animation: bounce 2s infinite; }
+.markerOrange { color: var(--warning-orange); }
+.markerGreen { color: var(--success-green); }
+
+@keyframes bounce {
+  0%, 100% { transform: translate(-50%, -100%); }
+  50% { transform: translate(-50%, -110%); }
+}
+
+.popover {
+  position: absolute;
+  background: rgba(15, 20, 25, 0.95);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 16px;
+  width: 220px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  z-index: 20;
+}
+
+.popoverTitle {
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 12px;
+  color: white;
+}
+
+.popoverBody {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: #A0AAB4;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.detailsBtn {
+  width: 100%;
+  padding: 8px;
+  background: rgba(0, 102, 204, 0.2);
+  border: 1px solid var(--primary-blue);
+  color: var(--accent-cyan);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.detailsBtn:hover { background: rgba(0, 102, 204, 0.4); }
+
+.legend {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  background: rgba(15, 20, 25, 0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 16px;
+  z-index: 10;
+}
+
+.legendTitle {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: white;
+}
+
+.legendList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  color: #A0AAB4;
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.legendItem span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.dotRed { background: var(--critical-red); box-shadow: 0 0 8px var(--critical-red); }
+.dotOrange { background: var(--warning-orange); }
+.dotGreen { background: var(--success-green); }
+.dotGray { background: var(--status-false-pos); }
