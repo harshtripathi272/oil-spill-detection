@@ -8,7 +8,7 @@ from app.schemas.dashboard import Incident as IncidentSchema, DagRun as DagRunSc
 
 router = APIRouter()
 
-@router.get("/", response_model=List[IncidentSchema])
+@router.get("", response_model=List[IncidentSchema])
 async def get_incidents(
     skip: int = 0,
     limit: int = 100,

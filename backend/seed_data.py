@@ -12,8 +12,11 @@ import random
 # Add the app directory to the path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from app.database import SessionLocal, engine
-from app.models.incident import Incident, DagRun, TaskInstance, Metric
+from app.database import SessionLocal, engine, Base
+from app.models.incident import Incident, DagRun, TaskInstance, Metric, SystemStatus
+from app.models.alerts import Alert
+from app.models.users import User
+from app.models.logs import LogEntry
 from sqlalchemy.orm import Session
 
 def create_sample_incidents(db: Session):
@@ -164,10 +167,203 @@ def create_sample_metrics(db: Session):
     db.commit()
     print(f"Created {len(metrics)} sample metrics")
 
+def create_sample_alerts(db: Session, incidents):
+    """Create sample alerts"""
+    print("Creating sample alerts...")
+
+    alerts_data = [
+        {
+            "incident_id": incidents[0].id,
+            "level": "high",
+            "message": "High confidence oil spill detected in Gulf of Mexico",
+            "acknowledged": False
+        },
+        {
+            "incident_id": incidents[1].id,
+            "level": "medium",
+            "message": "Potential oil spill detected near Houston",
+            "acknowledged": True
+        },
+        {
+            "incident_id": None,
+            "level": "low",
+            "message": "System maintenance scheduled for tonight",
+            "acknowledged": False
+        },
+        {
+            "incident_id": incidents[2].id,
+            "level": "high",
+            "message": "Confirmed oil spill in New York Harbor",
+            "acknowledged": True
+        }
+    ]
+
+    alerts = []
+    for data in alerts_data:
+        alert = Alert(**data)
+        alerts.append(alert)
+        db.add(alert)
+
+    db.commit()
+    print(f"Created {len(alerts)} sample alerts")
+    return alerts
+
+def create_sample_users(db: Session):
+    """Create sample users"""
+    print("Creating sample users...")
+
+    users_data = [
+        {
+            "username": "admin",
+            "full_name": "System Administrator",
+            "email": "admin@oilspill.gov",
+            "role": "admin",
+            "hashed_password": "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj6fMJyHnUe",  # password: admin123
+            "enabled": True
+        },
+        {
+            "username": "analyst1",
+            "full_name": "John Analyst",
+            "email": "john.analyst@oilspill.gov",
+            "role": "analyst",
+            "hashed_password": "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj6fMJyHnUe",  # password: analyst123
+            "enabled": True
+        },
+        {
+            "username": "analyst2",
+            "full_name": "Jane Analyst",
+            "email": "jane.analyst@oilspill.gov",
+            "role": "analyst",
+            "hashed_password": "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj6fMJyHnUe",  # password: analyst123
+            "enabled": True
+        }
+    ]
+
+    users = []
+    for data in users_data:
+        user = User(**data)
+        users.append(user)
+        db.add(user)
+
+    db.commit()
+    print(f"Created {len(users)} sample users")
+    return users
+
+def create_sample_system_status(db: Session):
+    """Create sample system status"""
+    print("Creating sample system status...")
+
+    status_data = [
+        {
+            "component": "database",
+            "status": "healthy",
+            "details": {"connection": "ok", "latency": "5ms"}
+        },
+        {
+            "component": "kafka",
+            "status": "healthy",
+            "details": {"brokers": 3, "topics": 5}
+        },
+        {
+            "component": "airflow",
+            "status": "warning",
+            "details": {"dags": 2, "running": 1, "failed": 0}
+        },
+        {
+            "component": "model_server",
+            "status": "healthy",
+            "details": {"version": "yolo26n-bbox-1024-merged", "uptime": "24h"}
+        },
+        {
+            "component": "api_server",
+            "status": "healthy",
+            "details": {"requests_per_minute": 45, "error_rate": 0.1}
+        }
+    ]
+
+    statuses = []
+    for data in status_data:
+        status = SystemStatus(**data)
+        statuses.append(status)
+        db.add(status)
+
+    db.commit()
+    print(f"Created {len(statuses)} sample system status entries")
+    return statuses
+
+def create_sample_logs(db: Session):
+    """Create sample log entries"""
+    print("Creating sample logs...")
+
+    log_entries = [
+        {
+            "level": "INFO",
+            "service": "kafka",
+            "message": "Kafka broker started successfully on localhost:9092",
+            "extra_metadata": {"broker_id": 1, "topics": ["sar-trigger-events"]}
+        },
+        {
+            "level": "INFO",
+            "service": "trigger_bridge",
+            "message": "SAR image fetch triggered for incident INC001",
+            "extra_metadata": {"incident_id": "incident_001", "image_url": "https://example.com/sar/image1.tif"}
+        },
+        {
+            "level": "INFO",
+            "service": "ingestion",
+            "message": "Successfully ingested SAR image for processing",
+            "extra_metadata": {"file_size": "45MB", "processing_time": "2.3s"}
+        },
+        {
+            "level": "WARNING",
+            "service": "anomaly_detector",
+            "message": "High confidence anomaly detected, confidence: 0.89",
+            "extra_metadata": {"confidence": 0.89, "bbox": [100, 200, 300, 400]}
+        },
+        {
+            "level": "INFO",
+            "service": "airflow",
+            "message": "DAG suspicious_event_validation completed successfully",
+            "extra_metadata": {"dag_id": "suspicious_event_validation", "run_id": "manual__2024-01-01T10:00:00", "duration": "45.2s"}
+        },
+        {
+            "level": "ERROR",
+            "service": "stream_processor",
+            "message": "Failed to process message from topic sar-trigger-events",
+            "extra_metadata": {"error": "Connection timeout", "retry_count": 3}
+        },
+        {
+            "level": "INFO",
+            "service": "api_server",
+            "message": "Incident incident_001 status updated to confirmed",
+            "extra_metadata": {"incident_id": "incident_001", "old_status": "detected", "new_status": "confirmed"}
+        }
+    ]
+
+    logs = []
+    for log_data in log_entries:
+        # Randomize timestamp within last 24 hours
+        timestamp = datetime.utcnow() - timedelta(hours=random.randint(0, 24))
+        log = LogEntry(
+            **log_data,
+            timestamp=timestamp
+        )
+        logs.append(log)
+        db.add(log)
+
+    db.commit()
+    print(f"Created {len(logs)} sample log entries")
+    return logs
+
 def main():
     """Main seeding function"""
     print("🌱 Seeding Oil Spill Detection Backend Database")
     print("=" * 50)
+
+    # Create all tables
+    print("Creating database tables...")
+    Base.metadata.create_all(bind=engine)
+    print("✅ Tables created")
 
     db = SessionLocal()
 
@@ -176,6 +372,10 @@ def main():
         incidents = create_sample_incidents(db)
         create_sample_dag_runs(db, incidents)
         create_sample_metrics(db)
+        create_sample_alerts(db, incidents)
+        create_sample_users(db)
+        create_sample_system_status(db)
+        create_sample_logs(db)
 
         print("=" * 50)
         print("✅ Database seeding completed successfully!")
@@ -183,6 +383,10 @@ def main():
         print(f"  • {len(incidents)} incidents")
         print("  • Corresponding DAG runs")
         print("  • 7 days of metrics data")
+        print("  • Sample alerts")
+        print("  • Sample users")
+        print("  • System status entries")
+        print("  • Sample log entries")
         print("\nYou can now start the backend server and test the APIs!")
 
     except Exception as e:

@@ -1,0 +1,129 @@
+.sidebar {
+  width: 200px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-primary);
+  flex-shrink: 0;
+}
+
+/* Brand */
+.brand {
+  padding: 20px 20px 16px;
+}
+
+.brandName {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.3px;
+}
+
+/* Section */
+.section {
+  padding: 0 20px 12px;
+}
+
+.sectionLabel {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--status-detected);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 2px;
+}
+
+.sectionHint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Region Nav */
+.regionNav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0 8px;
+  flex: 1;
+}
+
+.regionItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.15s, color 0.15s;
+}
+
+.regionItem:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+}
+
+.regionActive {
+  background: var(--accent-blue) !important;
+  color: white !important;
+}
+
+.regionActive svg {
+  color: white;
+}
+
+/* New Incident */
+.actionArea {
+  padding: 12px;
+}
+
+.newIncidentBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px;
+  background: var(--accent-blue);
+  border: none;
+  border-radius: var(--radius-md);
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  transition: background 0.15s;
+}
+
+.newIncidentBtn:hover {
+  background: #2563EB;
+}
+
+/* Bottom */
+.bottomNav {
+  border-top: 1px solid var(--border-primary);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.bottomItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.15s, color 0.15s;
+}
+
+.bottomItem:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+}
+
+.bottomActive {
+  color: var(--accent-cyan);
+}

@@ -2,6 +2,9 @@ from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
+# Import auth schemas for reusability
+from app.schemas.auth import Alert, UserResponse, AuthResponse, UserCreate
+
 # Incident schemas
 class IncidentBase(BaseModel):
     id: str
@@ -20,7 +23,7 @@ class Incident(IncidentBase):
     detection_time: datetime
     sar_image_path: Optional[str] = None
     processed_image_path: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
+    extra_metadata: Optional[Dict[str, Any]] = None
 
     class Config:
         from_attributes = True
@@ -46,7 +49,7 @@ class MetricBase(BaseModel):
     name: str
     value: float
     category: str
-    metadata: Optional[Dict[str, Any]] = None
+    extra_metadata: Optional[Dict[str, Any]] = None
 
 class Metric(MetricBase):
     id: int
