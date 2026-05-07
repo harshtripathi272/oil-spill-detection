@@ -125,19 +125,20 @@ class StateStore:
             except Exception as e:
                 logger.warning("Supabase update failed, falling back to SQLite: %s", e)
 
-        # Local Persistence (always or as fallback)
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute("""
-                    INSERT INTO incidents (incident_id, state, created_at, updated_at, metadata)
-                    VALUES (?, ?, ?, ?, ?)
-                    ON CONFLICT(incident_id) DO UPDATE SET
-                        state=excluded.state,
-                        updated_at=excluded.updated_at,
-                        metadata=excluded.metadata
-                """, (incident_id, new_state, created_at, current_time, json.dumps(merged_metadata)))
-        except Exception as e:
-            logger.error("Failed to update incident in SQLite: %s", e)
+        # Local Persistence (disabled per user request: "dont save those in db for now")
+        # try:
+        #     with sqlite3.connect(self.db_path) as conn:
+        #         conn.execute("""
+        #             INSERT INTO incidents (incident_id, state, created_at, updated_at, metadata)
+        #             VALUES (?, ?, ?, ?, ?)
+        #             ON CONFLICT(incident_id) DO UPDATE SET
+        #                 state=excluded.state,
+        #                 updated_at=excluded.updated_at,
+        #                 metadata=excluded.metadata
+        #         """, (incident_id, new_state, created_at, current_time, json.dumps(merged_metadata)))
+        # except Exception as e:
+        #     logger.error("Failed to update incident in SQLite: %s", e)
+        pass
 
     def list_incidents_by_state(self, state: str) -> list:
         if self.is_supabase_configured:

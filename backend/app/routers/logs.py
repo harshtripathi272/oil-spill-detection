@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timedelta
@@ -70,6 +71,18 @@ def get_log_file_content(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error reading log file: {str(e)}")
+
+@router.get("/download/{filename}")
+def download_log_file(filename: str):
+    """Download a log file."""
+    file_path = os.path.join(LOGS_DIR, filename)
+    if not os.path.exists(file_path) or not filename.endswith('.log'):
+        raise HTTPException(status_code=404, detail="Log file not found")
+    return FileResponse(
+        path=file_path,
+        filename=filename,
+        media_type='text/plain'
+    )
 
 @router.get("/recent")
 def get_recent_logs(

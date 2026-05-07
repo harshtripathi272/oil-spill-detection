@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Shield, Key, Bell, Users, Settings, Cpu, HardDrive, MemoryStick, MoreVertical, Activity, Database, Zap, Server, FileText, CheckCircle, AlertTriangle, XCircle, Search, RefreshCw } from 'lucide-react';
+import { Activity, Database, Zap, Server, FileText, CheckCircle, AlertTriangle, XCircle, Search, RefreshCw, Cpu, HardDrive, MemoryStick } from 'lucide-react';
 import styles from './SystemHealthPanel.module.css';
 import { fetchSystemHealth, fetchSystemResources, fetchLogFiles, fetchLogFileContent, fetchRecentLogs } from '@/lib/api';
 
@@ -13,43 +13,35 @@ interface ComponentStatus {
   details: any;
 }
 
-interface SystemHealth {
+interface SystemHealthData {
   overall_status: 'healthy' | 'warning' | 'error';
   components: ComponentStatus[];
   uptime: number;
   last_updated: string;
 }
 
-const mockUsers = [
-  { id: '1', username: 'admin', full_name: 'Aayush Kumar', email: 'a.kumar@vesselwatch.gov', role: 'Administrator', enabled: true },
-  { id: '2', username: 'analyst1', full_name: 'Sarah Chen', email: 's.chen@vesselwatch.gov', role: 'Lead Analyst', enabled: true },
-  { id: '3', username: 'analyst2', full_name: 'Michael Ross', email: 'm.ross@vesselwatch.gov', role: 'Field Agent', enabled: false },
-];
-
 /* --- Component --- */
 export default function SystemHealthPanel() {
-  const [health, setHealth] = useState<SystemHealth | null>(null);
+  const [health, setHealth] = useState<SystemHealthData | null>(null);
   const [resources, setResources] = useState<any>(null);
   const [logFiles, setLogFiles] = useState<any[]>([]);
   const [selectedLog, setSelectedLog] = useState<string | null>(null);
   const [logContent, setLogContent] = useState<string>('');
-  const [recentLogs, setRecentLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [logSearch, setLogSearch] = useState('');
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const [healthData, resourceData, logFilesData, recentLogsData] = await Promise.all([
+      const [healthData, resourceData, logFilesData] = await Promise.all([
         fetchSystemHealth(),
         fetchSystemResources(),
         fetchLogFiles(),
-        fetchRecentLogs()
       ]);
       setHealth(healthData);
       setResources(resourceData);
       setLogFiles(logFilesData);
-      setRecentLogs(recentLogsData);
       setError(null);
     } catch (err) {
       console.error('Failed to load system data:', err);
@@ -61,13 +53,13 @@ export default function SystemHealthPanel() {
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 30000); // 30s refresh
+    const interval = setInterval(loadData, 30000);
     return () => clearInterval(interval);
   }, []);
 
   const loadLogContent = async (filename: string) => {
     try {
-      const data = await fetchLogFileContent(filename, 100);
+      const data = await fetchLogFileContent(filename, 100, logSearch || undefined);
       setSelectedLog(filename);
       setLogContent(data.content);
     } catch (err) {
@@ -94,14 +86,8 @@ export default function SystemHealthPanel() {
       case 'kafka': return <Zap size={16} />;
       case 'airflow': return <Activity size={16} />;
       case 'api_server': return <Server size={16} />;
-      default: return <Settings size={16} />;
+      default: return <Activity size={16} />;
     }
-  };
-
-  const formatUptime = (seconds: number) => {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    return `${hours}h ${minutes}m`;
   };
 
   const formatBytes = (bytes: number) => {
@@ -115,7 +101,7 @@ export default function SystemHealthPanel() {
       {/* Header */}
       <div className={styles.pageHeader}>
         <div>
-          <h1>System Telemetry & Administration</h1>
+          <h1>System Telemetry &amp; Administration</h1>
           <p className={styles.subtitle}>Real-time infrastructure monitoring and system configuration.</p>
         </div>
         <div className={styles.headerActions}>
@@ -162,7 +148,14 @@ export default function SystemHealthPanel() {
               <h3>System Log Files</h3>
               <div className={styles.headerControl}>
                 <Search size={14} />
-                <input type="text" placeholder="Filter logs..." className={styles.smallInput} />
+                <input
+                  type="text"
+                  placeholder="Filter logs..."
+                  className={styles.smallInput}
+                  value={logSearch}
+                  onChange={(e) => setLogSearch(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && selectedLog) loadLogContent(selectedLog); }}
+                />
               </div>
             </div>
             
@@ -188,7 +181,7 @@ export default function SystemHealthPanel() {
           </div>
         </div>
 
-        {/* Right Column: Resources & Admin */}
+        {/* Right Column: Resources */}
         <div className={styles.sideCol}>
           {/* Resource Usage */}
           {resources && (
@@ -215,51 +208,42 @@ export default function SystemHealthPanel() {
                   <span className={styles.resPercentage}>{resources.disk.percent.toFixed(1)}%</span>
                 </div>
                 <div className={styles.progressBar}><div className={styles.progressFill} style={{ width: `${resources.disk.percent}%` }} /></div>
+
+                <div className={styles.resRow} style={{ marginTop: '0.75rem' }}>
+                  <span>Network TX</span>
+                  <span className={styles.resPercentage}>{formatBytes(resources.network.bytes_sent)}</span>
+                </div>
+                <div className={styles.resRow}>
+                  <span>Network RX</span>
+                  <span className={styles.resPercentage}>{formatBytes(resources.network.bytes_recv)}</span>
+                </div>
               </div>
             </div>
           )}
 
-          {/* Admin Tools */}
+          {/* System Info */}
           <div className={`${styles.panel} card`}>
             <div className={styles.panelHeader}>
-              <Shield size={20} />
-              <h3>Security & Administration</h3>
+              <Server size={20} />
+              <h3>System Info</h3>
             </div>
             <div className={styles.adminActionList}>
-              <button className={styles.actionItem}>
-                <Key size={14} />
-                <span>Rotate API Keys</span>
-              </button>
-              <button className={styles.actionItem}>
-                <Database size={14} />
-                <span>Database Maintenance</span>
-              </button>
-              <button className={styles.actionItem}>
-                <Zap size={14} />
-                <span>Re-sync Brokers</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Connected Operators */}
-          <div className={`${styles.panel} card`}>
-            <div className={styles.panelHeader}>
-              <Users size={20} />
-              <h3>Active Operators</h3>
-            </div>
-            <div className={styles.userList}>
-              {mockUsers.map(user => (
-                <div key={user.id} className={styles.userRow}>
-                   <div className={styles.userAvatar}>
-                    {user.full_name.split(' ').map(n => n[0]).join('')}
-                   </div>
-                   <div className={styles.userInfo}>
-                    <div className={styles.userName}>{user.full_name}</div>
-                    <div className={styles.userRole}>{user.role}</div>
-                   </div>
-                   <div className={`${styles.userStatus} ${user.enabled ? styles.active : styles.offline}`} />
-                </div>
-              ))}
+              {resources && (
+                <>
+                  <div className={styles.actionItem} style={{ cursor: 'default' }}>
+                    <Cpu size={14} />
+                    <span>CPU Cores: {resources.cpu.cores}</span>
+                  </div>
+                  <div className={styles.actionItem} style={{ cursor: 'default' }}>
+                    <MemoryStick size={14} />
+                    <span>RAM: {formatBytes(resources.memory.total)}</span>
+                  </div>
+                  <div className={styles.actionItem} style={{ cursor: 'default' }}>
+                    <HardDrive size={14} />
+                    <span>Disk: {formatBytes(resources.disk.total)}</span>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

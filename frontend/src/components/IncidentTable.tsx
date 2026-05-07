@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { ChevronDown, Download, Filter, Search } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { ChevronDown, Download, Filter } from 'lucide-react';
 import styles from './IncidentTable.module.css';
-import { fetchIncidents } from '@/lib/api';
+import { fetchIncidents, updateIncidentStatus } from '@/lib/api';
 
 interface Incident {
   id: string;
@@ -15,6 +15,8 @@ interface Incident {
   model_version?: string;
   processing_time?: number;
   extra_metadata?: any;
+  sar_image_path?: string;
+  processed_image_path?: string;
 }
 
 export default function IncidentTable() {
@@ -25,6 +27,7 @@ export default function IncidentTable() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [statusFilter, setStatusFilter] = useState('all');
   const [confThreshold, setConfThreshold] = useState(0);
+  const [statusDropdownId, setStatusDropdownId] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -65,6 +68,38 @@ export default function IncidentTable() {
   const confColor = (score: number) =>
     score > 0.8 ? 'var(--success)' : score > 0.6 ? 'var(--warning)' : 'var(--text-dim)';
 
+  const handleStatusUpdate = async (incidentId: string, newStatus: string) => {
+    try {
+      await updateIncidentStatus(incidentId, newStatus);
+      setIncidents((prev) =>
+        prev.map((inc) => (inc.id === incidentId ? { ...inc, status: newStatus } : inc))
+      );
+      setStatusDropdownId(null);
+    } catch (err) {
+      console.error('Status update failed:', err);
+    }
+  };
+
+  const handleExportSelected = () => {
+    const selectedIncidents = incidents.filter((i) => selected.has(i.id));
+    if (selectedIncidents.length === 0) return;
+
+    const headers = ['ID', 'Latitude', 'Longitude', 'Confidence', 'Status', 'Detection Time'];
+    const rows = selectedIncidents.map((i) => [
+      i.id, i.latitude, i.longitude, i.confidence_score, i.status, i.detection_time,
+    ]);
+    const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'incidents_export.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const statusOptions = ['detected', 'confirmed', 'resolved', 'false_positive'];
+
   return (
     <div className={`${styles.page} animate-enter`}>
       {/* Filter Bar */}
@@ -72,7 +107,7 @@ export default function IncidentTable() {
         <div className={styles.filterGroup}>
           <span className={styles.filterLabel}>Status</span>
           <div className={styles.chipRow}>
-            {['all', 'detected', 'confirmed'].map((s) => (
+            {['all', 'detected', 'confirmed', 'resolved'].map((s) => (
               <button
                 key={s}
                 className={`${styles.chip} ${statusFilter === s ? styles.chipActive : ''}`}
@@ -98,20 +133,6 @@ export default function IncidentTable() {
             <span className={styles.sliderVal}>{(confThreshold).toFixed(2)}+</span>
           </div>
         </div>
-
-        <div className={styles.filterGroup}>
-          <span className={styles.filterLabel}>Time Range</span>
-          <select className={styles.select}>
-            <option>Last 30 Days</option>
-            <option>Last 7 Days</option>
-            <option>Last 24 Hours</option>
-          </select>
-        </div>
-
-        <button className={styles.moreFilters}>
-          <Filter size={14} />
-          More Filters
-        </button>
       </div>
 
       {/* Table */}
@@ -142,9 +163,8 @@ export default function IncidentTable() {
             </thead>
             <tbody>
               {filtered.map((inc) => (
-                <>
+                <React.Fragment key={inc.id}>
                   <tr
-                    key={inc.id}
                     className={`${styles.row} ${expandedId === inc.id ? styles.rowExpanded : ''} ${
                       selected.has(inc.id) ? styles.rowSelected : ''
                     }`}
@@ -192,37 +212,83 @@ export default function IncidentTable() {
                     </td>
                   </tr>
 
-                  {/* Expanded Detail Row */}
+                  {/* Expanded Detail Row — Real Data */}
                   {expandedId === inc.id && (
                     <tr key={`${inc.id}-detail`} className={styles.detailRow}>
                       <td colSpan={7}>
                         <div className={styles.detailGrid}>
                           <div className={styles.detailSection}>
-                            <h4>Vessel Name</h4>
-                            <p className={styles.detailValue}>UNKNOWN VESSEL</p>
+                            <h4>Vessel / Source</h4>
+                            <p className={styles.detailValue}>
+                              {inc.extra_metadata?.vessel_id || inc.extra_metadata?.mmsi || 'N/A'}
+                            </p>
                           </div>
                           <div className={styles.detailSection}>
-                            <h4>MMSI / IMO</h4>
-                            <p className={styles.detailValue}>--- / ---</p>
+                            <h4>Model Version</h4>
+                            <p className={styles.detailValue}>
+                              {inc.model_version || 'YOLOv26n-bbox'}
+                            </p>
                           </div>
                           <div className={styles.detailSection}>
-                            <h4>Detection Source</h4>
-                            <p className={styles.detailValue}>SAR Satellite (Sentinel-1)</p>
+                            <h4>Processing Time</h4>
+                            <p className={styles.detailValue}>
+                              {inc.processing_time != null ? `${inc.processing_time.toFixed(2)}s` : 'N/A'}
+                            </p>
                           </div>
                           <div className={styles.detailActions}>
-                            <button className={styles.btnPrimary}>Investigate Full Details</button>
-                            <button className={styles.btnSecondary}>Task Aerial Asset</button>
-                            <button className={styles.btnOutline}>Update Status to Resolved</button>
+                            {inc.sar_image_path && (
+                              <a href={inc.sar_image_path} target="_blank" rel="noopener noreferrer" className={styles.btnPrimary}>
+                                View SAR Image
+                              </a>
+                            )}
+                            <div style={{ position: 'relative' }}>
+                              <button
+                                className={styles.btnSecondary}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setStatusDropdownId(statusDropdownId === inc.id ? null : inc.id);
+                                }}
+                              >
+                                Update Status ▾
+                              </button>
+                              {statusDropdownId === inc.id && (
+                                <div style={{
+                                  position: 'absolute', top: '100%', left: 0, zIndex: 10,
+                                  background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)',
+                                  borderRadius: 6, padding: '0.25rem 0', minWidth: 140,
+                                }}>
+                                  {statusOptions.map((s) => (
+                                    <button
+                                      key={s}
+                                      onClick={(e) => { e.stopPropagation(); handleStatusUpdate(inc.id, s); }}
+                                      style={{
+                                        display: 'block', width: '100%', padding: '0.4rem 0.75rem',
+                                        background: 'none', border: 'none', textAlign: 'left',
+                                        color: 'var(--text-primary)', cursor: 'pointer', fontSize: 12,
+                                      }}
+                                      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-tertiary)')}
+                                      onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
+                                    >
+                                      {s.replace(/_/g, ' ')}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
-                        <div className={styles.analystNotes}>
-                          <h4>Analyst Notes</h4>
-                          <p>High RCS signature consistent with mid-size trawler operating dark in restricted zone. No AIS transmission detected within 50nm radius.</p>
-                        </div>
+                        {inc.extra_metadata && Object.keys(inc.extra_metadata).length > 0 && (
+                          <div className={styles.analystNotes}>
+                            <h4>Incident Metadata</h4>
+                            <pre style={{ fontSize: 11, color: 'var(--text-secondary)', whiteSpace: 'pre-wrap' }}>
+                              {JSON.stringify(inc.extra_metadata, null, 2)}
+                            </pre>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   )}
-                </>
+                </React.Fragment>
               ))}
             </tbody>
           </table>
@@ -233,11 +299,8 @@ export default function IncidentTable() {
               Showing 1 to {filtered.length} of {incidents.length} incidents | {selected.size} selected
             </span>
             <div className={styles.footerActions}>
-              <button className={styles.btnExport} disabled={selected.size === 0}>
+              <button className={styles.btnExport} disabled={selected.size === 0} onClick={handleExportSelected}>
                 <Download size={14} /> Export Selected
-              </button>
-              <button className={styles.btnUpdateStatus} disabled={selected.size === 0}>
-                Update Status ▾
               </button>
             </div>
           </div>

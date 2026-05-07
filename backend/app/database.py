@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 engine = create_engine(
     settings.database_url,
     pool_pre_ping=True,
-    echo=settings.debug,
+    echo=False,  # Disabled: was flooding terminal and masking real API logs
     future=True,
 )
 
