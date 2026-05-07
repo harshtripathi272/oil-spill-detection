@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from app.database import get_db, supabase
 from app.models.incident import Incident, DagRun
 from app.schemas.dashboard import Incident as IncidentSchema, DagRun as DagRunSchema
+from app.cache import cache_clear_prefix
 
 router = APIRouter()
 
@@ -95,6 +96,8 @@ async def update_incident_status(
     incident.status = status
     db.commit()
     db.refresh(incident)
+    # Bust cached dashboard and incident data so next fetch is fresh
+    cache_clear_prefix("dashboard:")
     return {"message": f"Incident {incident_id} status updated to {status}"}
 
 @router.get("/stats/status-breakdown")

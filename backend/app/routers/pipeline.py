@@ -1,7 +1,7 @@
 """
 Pipeline visibility endpoints.
-Serves DAG structure, SAR images, YOLO model results, and anomaly stats
-from files on disk — no database required.
+Serves DAG structure, SAR images, YOLO model results, anomaly stats,
+and a confidence-score histogram — all from files on disk, no DB required.
 """
 
 import csv
@@ -192,4 +192,41 @@ async def get_anomaly_stats():
         "avg_anomaly_score": avg_score,
         "top_vessels": [{"vessel_id": v, "count": c} for v, c in top_vessels],
         "recent_anomalies": recent_anomalies[-20:],  # last 20
+    }
+
+
+@router.get("/confidence-histogram")
+async def get_confidence_histogram():
+    """
+    Returns a histogram of anomaly scores from the detector log,
+    bucketed into 0.1-wide bins (0.6-0.7, 0.7-0.8, 0.8-0.9, 0.9-1.0).
+    Used as the 'Incident Trends' replacement chart on the dashboard.
+    """
+    log_path = os.path.join(LOGS_DIR, "anomaly_detector.log")
+    if not os.path.isfile(log_path):
+        return {"labels": [], "counts": [], "total": 0}
+
+    score_pattern = re.compile(r"Score: ([\d.]+)")
+    bins = {"0.60-0.70": 0, "0.70-0.80": 0, "0.80-0.90": 0, "0.90-1.00": 0}
+
+    total = 0
+    with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+        for line in f:
+            m = score_pattern.search(line)
+            if m:
+                score = float(m.group(1))
+                total += 1
+                if score < 0.70:
+                    bins["0.60-0.70"] += 1
+                elif score < 0.80:
+                    bins["0.70-0.80"] += 1
+                elif score < 0.90:
+                    bins["0.80-0.90"] += 1
+                else:
+                    bins["0.90-1.00"] += 1
+
+    return {
+        "labels": list(bins.keys()),
+        "counts": list(bins.values()),
+        "total": total,
     }
