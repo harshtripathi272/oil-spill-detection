@@ -1,37 +1,85 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import {
-  TrendingUp,
-  TrendingDown,
-  AlertTriangle,
-  Eye,
-  ChevronRight,
-} from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { TrendingUp, TrendingDown, ChevronRight, Activity, AlertTriangle, GitBranch, Satellite, BarChart3, Ship } from 'lucide-react';
 import styles from '@/app/page.module.css';
-import { fetchDashboardOverview, fetchAlerts, getWebSocketUrl } from '@/lib/api';
+import {
+  fetchDashboardOverview, fetchAlerts, fetchLogFileContent,
+  getWebSocketUrl, acknowledgeAlert, fetchDagFlow,
+  fetchSarImages, fetchAnomalyStats, getSarImageUrl,
+} from '@/lib/api';
 import Link from 'next/link';
 
 interface DashboardData {
   stats?: any;
   alerts?: any[];
   incidents?: any[];
+  status_distribution?: any;
+}
+
+interface LogLine {
+  raw: string;
+  level: string;
+  timestamp: string;
+  message: string;
+  isAnomaly: boolean;
+}
+
+function parseLine(raw: string): LogLine {
+  const m = raw.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),\d+ - \S+ - (\w+) - (.+)$/);
+  const timestamp = m ? m[1] : '';
+  const level = m ? m[2] : 'INFO';
+  const message = m ? m[3].trim() : raw.trim();
+  const isAnomaly = raw.includes('[ANOMALY DETECTED]') || raw.includes('🚨');
+  return { raw, level, timestamp, message, isAnomaly };
 }
 
 export default function DashboardOverview() {
   const [data, setData] = useState<DashboardData>({});
   const [loading, setLoading] = useState(true);
+  const [logLines, setLogLines] = useState<LogLine[]>([]);
+  const logRef = useRef<HTMLDivElement>(null);
+  const isFetchingLogs = useRef(false);
+
+  /* Pipeline state */
+  const [dagFlow, setDagFlow] = useState<any>(null);
+  const [sarImages, setSarImages] = useState<any[]>([]);
+  const [anomalyStats, setAnomalyStats] = useState<any>(null);
+
+  const fetchLogs = useCallback(async () => {
+    if (isFetchingLogs.current) return;
+    isFetchingLogs.current = true;
+    try {
+      const result = await fetchLogFileContent('anomaly_detector.log', 60);
+      const lines: LogLine[] = (result.content as string)
+        .split('\n')
+        .filter((l: string) => l.trim())
+        .map(parseLine);
+      setLogLines(lines);
+    } catch { /* ignore */ } finally {
+      isFetchingLogs.current = false;
+    }
+  }, []);
 
   useEffect(() => {
     async function init() {
       try {
-        const overview = await fetchDashboardOverview();
-        const alertsData = await fetchAlerts();
+        const [overview, alertsData, dagData, sarData, anomalyData] = await Promise.all([
+          fetchDashboardOverview(),
+          fetchAlerts(),
+          fetchDagFlow().catch(() => null),
+          fetchSarImages().catch(() => ({ images: [] })),
+          fetchAnomalyStats().catch(() => null),
+        ]);
         setData({
           stats: overview.stats,
           alerts: alertsData.slice(0, 3),
           incidents: overview.recent_incidents,
+          status_distribution: overview.status_distribution,
         });
+        setDagFlow(dagData);
+        setSarImages(sarData.images || []);
+        setAnomalyStats(anomalyData);
       } catch (err) {
         console.error('Dashboard fetch error:', err);
       } finally {
@@ -40,7 +88,9 @@ export default function DashboardOverview() {
     }
     init();
 
-    /* WebSocket for live updates */
+    fetchLogs();
+    const logTimer = setInterval(fetchLogs, 8000);
+
     let socket: WebSocket | null = null;
     const connect = () => {
       try {
@@ -61,48 +111,102 @@ export default function DashboardOverview() {
       } catch { /* swallow */ }
     };
     connect();
-    return () => { socket?.close(); };
-  }, []);
+    return () => {
+      socket?.close();
+      clearInterval(logTimer);
+    };
+  }, [fetchLogs]);
+
+  useEffect(() => {
+    if (logRef.current) {
+      logRef.current.scrollTop = logRef.current.scrollHeight;
+    }
+  }, [logLines]);
 
   const stats = data.stats || {};
   const alerts = useMemo(() => data.alerts || [], [data.alerts]);
   const incidents = useMemo(() => data.incidents || [], [data.incidents]);
 
+  /* Compute real status distribution */
+  const statusDist = useMemo(() => {
+    const sd = data.status_distribution?.data;
+    if (!sd?.statuses || !sd?.counts) return [];
+    const total = sd.counts.reduce((a: number, b: number) => a + b, 0) || 1;
+    const colors: Record<string, string> = {
+      detected: 'var(--status-detected)',
+      confirmed: 'var(--status-confirmed)',
+      resolved: 'var(--status-resolved)',
+      false_positive: 'var(--status-false-pos)',
+    };
+    return sd.statuses.map((s: string, i: number) => ({
+      label: s.replace(/_/g, ' '),
+      count: sd.counts[i],
+      pct: Math.round((sd.counts[i] / total) * 100),
+      color: colors[s.toLowerCase()] || 'var(--text-dim)',
+    }));
+  }, [data.status_distribution]);
+
+  const handleAcknowledge = async (alertId: number) => {
+    try {
+      await acknowledgeAlert(alertId);
+      setData((cur) => ({
+        ...cur,
+        alerts: (cur.alerts || []).filter((a) => a.id !== alertId),
+      }));
+    } catch { /* ignore */ }
+  };
+
   const kpis = [
     {
       title: 'Total Incidents',
       value: stats.total_incidents ?? '--',
-      trend: '+12% MoM',
+      trend: 'All time',
       trendDir: 'up' as const,
       color: 'var(--accent-blue)',
     },
     {
-      title: 'Active',
+      title: 'Active Now',
       value: stats.active_incidents ?? '--',
-      trend: '+2 MoM',
+      trend: 'Detected + Confirmed',
       trendDir: 'up' as const,
       color: 'var(--warning)',
     },
     {
-      title: 'Success Rate',
-      value: stats.total_dag_runs
-        ? `${Math.round((stats.successful_runs / Math.max(stats.total_dag_runs, 1)) * 100)}%`
-        : stats.success_rate ?? '--',
-      trend: '+0.5% MoM',
+      title: 'Avg Confidence',
+      value: stats.avg_confidence_score != null
+        ? `${(stats.avg_confidence_score * 100).toFixed(1)}%`
+        : '--',
+      trend: 'Detection quality',
       trendDir: 'up' as const,
       color: 'var(--success)',
     },
     {
-      title: 'Avg Confidence',
-      value: stats.avg_confidence_score?.toFixed(2) ?? '--',
-      trend: '-0.02 MoM',
+      title: 'Resolved',
+      value: stats.resolved_incidents ?? '--',
+      trend: 'Closed cases',
       trendDir: 'down' as const,
       color: 'var(--text-secondary)',
     },
   ];
 
-  // Mock sparkline bars
-  const sparkBars = [4, 6, 3, 7, 5, 8, 6, 9, 7, 10, 8, 6];
+  /* Compute real bar chart from incidents_over_time if available, else from incidents */
+  const barData = useMemo(() => {
+    const iot = (data as any)?.incidents_over_time?.data;
+    if (iot?.dates?.length > 0 && iot?.counts?.length > 0) {
+      return iot.counts as number[];
+    }
+    // Fallback: group incidents by day
+    if (incidents.length === 0) return [];
+    const byCounts: Record<string, number> = {};
+    incidents.forEach((inc: any) => {
+      if (!inc.detection_time) return;
+      const d = inc.detection_time.split('T')[0];
+      byCounts[d] = (byCounts[d] || 0) + 1;
+    });
+    return Object.values(byCounts);
+  }, [data, incidents]);
+
+  const maxBar = Math.max(1, ...barData);
 
   return (
     <div className={`${styles.page} animate-enter`}>
@@ -120,11 +224,6 @@ export default function DashboardOverview() {
                 {kpi.trendDir === 'up' ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
                 {kpi.trend}
               </span>
-              <div className={styles.sparkline}>
-                {sparkBars.map((h, j) => (
-                  <div key={j} className={styles.sparkBar} style={{ height: `${h * 3}px`, background: kpi.color }} />
-                ))}
-              </div>
             </div>
           </div>
         ))}
@@ -132,51 +231,53 @@ export default function DashboardOverview() {
 
       {/* Middle Row: Charts + Alerts */}
       <div className={styles.midRow}>
-        {/* Incident Trends */}
+        {/* Incident Trends — real data */}
         <div className={`${styles.chartCard} card`}>
-          <h3 className={styles.cardTitle}>Incident Trends (30d)</h3>
+          <h3 className={styles.cardTitle}>Incident Trends</h3>
           <div className={styles.barChart}>
-            {[4, 7, 5, 8, 12, 15, 22, 18, 14, 9, 11, 16, 19, 25, 20, 15, 10, 12, 8, 14].map((h, i) => (
-              <div key={i} className={styles.barWrap}>
-                <div className={styles.bar} style={{ height: `${h * 4}px` }} />
-                {i % 5 === 0 && <span className={styles.barLabel}>{i}d</span>}
-              </div>
-            ))}
+            {barData.length === 0 ? (
+              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>No incident data yet</span>
+            ) : (
+              barData.map((h, i) => (
+                <div key={i} className={styles.barWrap}>
+                  <div className={styles.bar} style={{ height: `${(h / maxBar) * 100}px` }} />
+                </div>
+              ))
+            )}
           </div>
         </div>
 
-        {/* Status Distribution */}
+        {/* Status Distribution — real data */}
         <div className={`${styles.chartCard} card`}>
           <h3 className={styles.cardTitle}>Status Distribution</h3>
           <div className={styles.distGrid}>
             <div className={styles.donut}>
               <svg viewBox="0 0 36 36" className={styles.donutSvg}>
                 <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--border-primary)" strokeWidth="3" />
-                <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--status-detected)" strokeWidth="3"
-                  strokeDasharray="45 55" strokeDashoffset="25" strokeLinecap="round" />
-                <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--status-confirmed)" strokeWidth="3"
-                  strokeDasharray="35 65" strokeDashoffset="80" strokeLinecap="round" />
-                <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--status-resolved)" strokeWidth="3"
-                  strokeDasharray="15 85" strokeDashoffset="45" strokeLinecap="round" />
+                {statusDist.reduce((acc: any[], item: any, idx: number) => {
+                  const offset = idx === 0 ? 25 : acc[idx - 1].nextOffset;
+                  acc.push({
+                    el: (
+                      <circle key={idx} cx="18" cy="18" r="15.9" fill="none" stroke={item.color} strokeWidth="3"
+                        strokeDasharray={`${item.pct} ${100 - item.pct}`} strokeDashoffset={offset} strokeLinecap="round" />
+                    ),
+                    nextOffset: offset - item.pct,
+                  });
+                  return acc;
+                }, []).map((a: any) => a.el)}
               </svg>
             </div>
             <div className={styles.distLegend}>
-              <div className={styles.legendRow}>
-                <span className={styles.legendDot} style={{ background: 'var(--status-detected)' }} />
-                <span>Detected</span><span className={styles.legendVal}>45%</span>
-              </div>
-              <div className={styles.legendRow}>
-                <span className={styles.legendDot} style={{ background: 'var(--status-confirmed)' }} />
-                <span>Confirmed</span><span className={styles.legendVal}>35%</span>
-              </div>
-              <div className={styles.legendRow}>
-                <span className={styles.legendDot} style={{ background: 'var(--status-false-pos)' }} />
-                <span>False Pos</span><span className={styles.legendVal}>15%</span>
-              </div>
-              <div className={styles.legendRow}>
-                <span className={styles.legendDot} style={{ background: 'var(--status-resolved)' }} />
-                <span>Resolved</span><span className={styles.legendVal}>5%</span>
-              </div>
+              {statusDist.length === 0 ? (
+                <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>No data</span>
+              ) : (
+                statusDist.map((item: any, i: number) => (
+                  <div key={i} className={styles.legendRow}>
+                    <span className={styles.legendDot} style={{ background: item.color }} />
+                    <span>{item.label}</span><span className={styles.legendVal}>{item.pct}%</span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>
@@ -209,8 +310,10 @@ export default function DashboardOverview() {
                 </div>
                 <p className={styles.alertMsg}>{alert.message}</p>
                 <div className={styles.alertActions}>
-                  <button className={styles.alertBtn}>View Details</button>
-                  <button className={styles.alertBtnPrimary}>Acknowledge</button>
+                  <Link href="/incidents" className={styles.alertBtn}>View Details</Link>
+                  <button className={styles.alertBtnPrimary} onClick={() => handleAcknowledge(alert.id)}>
+                    Acknowledge
+                  </button>
                 </div>
               </div>
             ))}
@@ -218,32 +321,156 @@ export default function DashboardOverview() {
         </div>
       </div>
 
-      {/* Bottom Row */}
-      <div className={styles.bottomRow}>
-        {/* Processing Time */}
-        <div className={`${styles.smallChart} card`}>
-          <h3 className={styles.cardTitle}>Processing Time</h3>
-          <div className={styles.barChart} style={{ height: 120 }}>
-            {[28, 45, 35, 55, 40].map((h, i) => (
-              <div key={i} className={styles.barWrap} style={{ flex: 1 }}>
-                <div className={styles.bar} style={{ height: `${h * 2}px`, background: 'var(--accent-blue)' }} />
-              </div>
-            ))}
+      {/* Live Anomaly Log Feed */}
+      <div className={`${styles.tableSection} card`} style={{ marginBottom: '1rem' }}>
+        <div className={styles.tableHeader}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Activity size={14} style={{ color: 'var(--accent-blue)' }} />
+            <h3 className={styles.cardTitle} style={{ margin: 0 }}>Anomaly Detector — Live Feed</h3>
+            <span style={{
+              fontSize: 10, fontWeight: 600, letterSpacing: '0.08em',
+              color: 'var(--success)', background: 'rgba(16,185,129,0.1)',
+              padding: '2px 6px', borderRadius: 4, marginLeft: 4
+            }}>LIVE</span>
           </div>
+          <Link href="/system-health" className={styles.viewAllLink}>
+            Full Log Explorer <ChevronRight size={14} />
+          </Link>
+        </div>
+        <div
+          ref={logRef}
+          style={{
+            fontFamily: "'IBM Plex Mono', monospace",
+            fontSize: 11,
+            lineHeight: 1.7,
+            background: '#060d18',
+            borderRadius: 6,
+            padding: '10px 12px',
+            maxHeight: 220,
+            overflowY: 'auto',
+            border: '1px solid var(--border-primary)',
+          }}
+        >
+          {logLines.length === 0 ? (
+            <span style={{ color: 'var(--text-muted)' }}>Loading anomaly detector logs…</span>
+          ) : (
+            logLines.map((line, i) => (
+              <div key={i} style={{
+                color: line.isAnomaly
+                  ? 'var(--warning)'
+                  : line.level === 'ERROR'
+                  ? 'var(--danger, #ef4444)'
+                  : 'var(--text-secondary)',
+                display: 'flex', gap: '0.75rem', alignItems: 'baseline',
+              }}>
+                {line.isAnomaly && <AlertTriangle size={10} style={{ flexShrink: 0, marginTop: 3, color: 'var(--warning)' }} />}
+                <span style={{ color: 'var(--text-muted)', flexShrink: 0, minWidth: 130 }}>
+                  {line.timestamp.split(' ')[1] || line.timestamp}
+                </span>
+                <span>{line.message}</span>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* Pipeline Overview Section */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+        {/* DAG Flow Visualization */}
+        <div className="card" style={{ padding: '1.25rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+            <GitBranch size={16} style={{ color: 'var(--accent-blue)' }} />
+            <h3 className={styles.cardTitle} style={{ margin: 0 }}>Detection Pipeline (DAG Flow)</h3>
+          </div>
+          {dagFlow ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              {dagFlow.tasks.map((task: any, idx: number) => (
+                <div key={task.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <div style={{
+                    width: 24, height: 24, borderRadius: '50%',
+                    background: 'var(--accent-blue)',
+                    color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 10, fontWeight: 700, flexShrink: 0,
+                  }}>{idx + 1}</div>
+                  <div style={{
+                    flex: 1, padding: '0.4rem 0.75rem',
+                    background: 'var(--bg-tertiary)',
+                    borderRadius: 6, border: '1px solid var(--border-primary)',
+                  }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{task.label}</div>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>{task.description}</div>
+                  </div>
+                  {idx < dagFlow.tasks.length - 1 && (
+                    <div style={{ position: 'absolute', left: 11, marginTop: 28, width: 2, height: 8, background: 'var(--border-primary)' }} />
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>Loading pipeline…</span>
+          )}
         </div>
 
-        {/* Model Performance */}
-        <div className={`${styles.smallChart} card`}>
-          <h3 className={styles.cardTitle}>Model Performance</h3>
-          <div className={styles.modelBars}>
-            {['M1', 'M2', 'M3', 'M4'].map((m, i) => (
-              <div key={i} className={styles.modelRow}>
-                <span className={styles.modelLabel}>{m}</span>
-                <div className={styles.modelTrack}>
-                  <div className={styles.modelFill} style={{ width: `${75 + i * 5}%` }} />
+        {/* Right column: Anomaly Stats + SAR Images */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          {/* Anomaly Stats */}
+          <div className="card" style={{ padding: '1.25rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+              <Ship size={16} style={{ color: 'var(--warning)' }} />
+              <h3 className={styles.cardTitle} style={{ margin: 0 }}>Anomaly Summary</h3>
+            </div>
+            {anomalyStats ? (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div style={{ background: 'var(--bg-tertiary)', padding: '0.75rem', borderRadius: 8, textAlign: 'center' }}>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--warning)' }}>{anomalyStats.total_anomalies}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>Total Anomalies</div>
+                </div>
+                <div style={{ background: 'var(--bg-tertiary)', padding: '0.75rem', borderRadius: 8, textAlign: 'center' }}>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--accent-blue)' }}>{anomalyStats.unique_vessels}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>Unique Vessels</div>
+                </div>
+                <div style={{ background: 'var(--bg-tertiary)', padding: '0.75rem', borderRadius: 8, textAlign: 'center' }}>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--success)' }}>{anomalyStats.avg_anomaly_score}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>Avg Score</div>
+                </div>
+                <div style={{ background: 'var(--bg-tertiary)', padding: '0.75rem', borderRadius: 8, textAlign: 'center' }}>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-primary)' }}>{anomalyStats.total_log_lines}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>Log Lines</div>
                 </div>
               </div>
-            ))}
+            ) : (
+              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>Loading stats…</span>
+            )}
+          </div>
+
+          {/* SAR Images */}
+          <div className="card" style={{ padding: '1.25rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+              <Satellite size={16} style={{ color: 'var(--success)' }} />
+              <h3 className={styles.cardTitle} style={{ margin: 0 }}>SAR Imagery ({sarImages.length})</h3>
+            </div>
+            {sarImages.length === 0 ? (
+              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>No SAR images available</span>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
+                {sarImages.filter((img: any) => img.type === 'preprocessed').slice(0, 3).map((img: any, i: number) => (
+                  <div key={i} style={{
+                    borderRadius: 6, overflow: 'hidden',
+                    border: '1px solid var(--border-primary)',
+                    background: 'var(--bg-tertiary)',
+                  }}>
+                    <img
+                      src={getSarImageUrl(img.filename)}
+                      alt={img.granule_id}
+                      style={{ width: '100%', height: 80, objectFit: 'cover' }}
+                    />
+                    <div style={{ padding: '0.35rem 0.5rem', fontSize: 9, color: 'var(--text-muted)', wordBreak: 'break-all' }}>
+                      {img.granule_id.split('_').slice(-3, -1).join(' ')}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -260,7 +487,7 @@ export default function DashboardOverview() {
               <th>ID</th>
               <th>Confidence</th>
               <th>Location</th>
-              <th>Time Ago</th>
+              <th>Detected</th>
               <th>Status</th>
             </tr>
           </thead>

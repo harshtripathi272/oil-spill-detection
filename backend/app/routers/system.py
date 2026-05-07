@@ -1,3 +1,5 @@
+import os
+import psutil
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -107,3 +109,57 @@ async def get_system_config():
         "working_directory": os.getcwd(),
         "process_id": os.getpid()
     }
+
+
+@router.get("/services-live")
+async def get_services_live():
+    """Get live status of known backend services by inspecting running processes."""
+    service_keywords = {
+        "FastAPI Backend": ["uvicorn"],
+        "Anomaly Detector": ["anomaly_detector"],
+        "Stream Processor": ["stream_processor"],
+        "Trigger Bridge": ["trigger_bridge"],
+        "Kafka Broker": ["kafka.Kafka", "kafka-server"],
+        "Airflow Scheduler": ["airflow", "scheduler"],
+    }
+
+    services = []
+    for name, keywords in service_keywords.items():
+        found = False
+        svc_cpu = 0.0
+        svc_mem = 0.0
+        svc_start = None
+        for proc in psutil.process_iter(["pid", "name", "cmdline", "cpu_percent", "memory_info", "create_time"]):
+            try:
+                cmdline = " ".join(proc.info.get("cmdline") or [])
+                if any(kw in cmdline for kw in keywords):
+                    found = True
+                    svc_cpu += proc.info.get("cpu_percent", 0) or 0
+                    mem_info = proc.info.get("memory_info")
+                    if mem_info:
+                        svc_mem += mem_info.rss
+                    ct = proc.info.get("create_time")
+                    if ct and (svc_start is None or ct < svc_start):
+                        svc_start = ct
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+
+        import time
+        uptime_str = ""
+        if svc_start:
+            up_secs = time.time() - svc_start
+            days = int(up_secs // 86400)
+            hours = int((up_secs % 86400) // 3600)
+            mins = int((up_secs % 3600) // 60)
+            uptime_str = f"{days}d {hours:02d}h {mins:02d}m"
+
+        services.append({
+            "name": name,
+            "status": "Healthy" if found else "Stopped",
+            "running": found,
+            "cpu_percent": round(svc_cpu, 1),
+            "memory_mb": round(svc_mem / (1024 * 1024), 1) if svc_mem else 0,
+            "uptime": uptime_str,
+        })
+
+    return {"services": services}
