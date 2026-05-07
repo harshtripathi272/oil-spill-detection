@@ -10,6 +10,9 @@ from airflow.models import BaseOperator
 from airflow.exceptions import AirflowException
 import logging
 import os
+import shutil
+import time
+from pathlib import Path
 
 import asf_search as asf
 
@@ -24,12 +27,16 @@ class SentinelDownloadOperator(BaseOperator):
         self,
         download_dir: str = "/tmp/sentinel_data",
         max_downloads: int = 1,
+        preprocessed_dir: str | None = None,
+        demo_delay_seconds: float = 0.8,
         *args,
         **kwargs
     ):
         super().__init__(*args, **kwargs)
         self.download_dir = download_dir
         self.max_downloads = max_downloads
+        self.preprocessed_dir = preprocessed_dir
+        self.demo_delay_seconds = demo_delay_seconds
 
     def execute(self, context):
         # Retrieve product list from XCom (assuming the upstream task ID is 'search_sentinel')
@@ -55,6 +62,10 @@ class SentinelDownloadOperator(BaseOperator):
 
         downloaded_paths = []
         os.makedirs(self.download_dir, exist_ok=True)
+
+        # DEMO fallback: copy local sample files instead of hitting ASF/Earthdata
+        if self._all_demo_samples(products):
+            return self._demo_copy_samples(products)
 
         username = os.getenv("EARTHDATA_USERNAME")
         password = os.getenv("EARTHDATA_PASSWORD")
@@ -91,6 +102,58 @@ class SentinelDownloadOperator(BaseOperator):
         if products and not downloaded_paths:
             raise AirflowException("No Sentinel products were downloaded successfully.")
             
+        return downloaded_paths
+
+    def _all_demo_samples(self, products: list) -> bool:
+        if not products:
+            return False
+        for p in products:
+            if not isinstance(p, dict):
+                return False
+            if not p.get("local_path"):
+                return False
+        return True
+
+    def _demo_copy_samples(self, products: list):
+        logging.info("🎬 DEMO MODE: Faking download by copying local sample PNGs.")
+        if self.demo_delay_seconds and self.demo_delay_seconds > 0:
+            time.sleep(float(self.demo_delay_seconds))
+
+        downloaded_paths = []
+        download_dir = Path(self.download_dir)
+        download_dir.mkdir(parents=True, exist_ok=True)
+
+        pre_dir = Path(self.preprocessed_dir) if self.preprocessed_dir else None
+        if pre_dir:
+            pre_dir.mkdir(parents=True, exist_ok=True)
+
+        for product in products:
+            src = product.get("local_path")
+            if not src:
+                continue
+            src_path = Path(src)
+            if not src_path.exists():
+                raise AirflowException(f"DEMO MODE: sample file does not exist: {src_path}")
+
+            # Make filenames look like downloaded artifacts (unique-ish, stable)
+            safe_name = product.get("fileName") or src_path.name
+            dst = download_dir / safe_name
+            shutil.copy2(src_path, dst)
+            downloaded_paths.append(str(dst))
+
+            # Also mirror into preprocessed so the UI can show something immediately.
+            if pre_dir:
+                pre_dst = pre_dir / safe_name
+                if pre_dst.resolve() != dst.resolve():
+                    shutil.copy2(src_path, pre_dst)
+
+            # A tiny per-file delay makes it feel like network IO.
+            time.sleep(0.25)
+
+        if products and not downloaded_paths:
+            raise AirflowException("DEMO MODE: No sample files were copied successfully.")
+
+        logging.info("🎬 DEMO MODE: Copied %d sample(s) into %s", len(downloaded_paths), str(download_dir))
         return downloaded_paths
 
     def _download_product(self, session, product: dict):

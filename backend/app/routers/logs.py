@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timedelta
 import asyncio
+import json
 import os
 import glob
 from app.database import get_db
@@ -56,9 +57,8 @@ async def stream_logs(
                 line = line.rstrip()
                 if line:
                     ts = line[:19] if len(line) > 19 else ""
-                    yield (
-                        f"data: {{\"service\":\"{svc}\",\"line\":{line!r},\"ts\":{ts!r}}}\n\n"
-                    )
+                    payload = json.dumps({"service": svc, "line": line, "ts": ts})
+                    yield f"data: {payload}\n\n"
 
         # Then tail new lines in a loop
         while True:
@@ -75,9 +75,8 @@ async def stream_logs(
                         line = line.rstrip()
                         if line:
                             ts = line[:19] if len(line) > 19 else ""
-                            yield (
-                                f"data: {{\"service\":\"{svc}\",\"line\":{line!r},\"ts\":{ts!r}}}\n\n"
-                            )
+                            payload = json.dumps({"service": svc, "line": line, "ts": ts})
+                            yield f"data: {payload}\n\n"
                 except Exception:
                     pass
             await asyncio.sleep(2)

@@ -12,6 +12,10 @@ import logging
 from datetime import datetime, timedelta
 
 import asf_search as asf
+import os
+import random
+import time
+from pathlib import Path
 
 class SentinelSearchOperator(BaseOperator):
     """
@@ -29,6 +33,11 @@ class SentinelSearchOperator(BaseOperator):
         search_end: str,
         event_time: str,
         max_results: int = None,
+        demo_fallback: bool = False,
+        demo_samples_dir: str | None = None,
+        demo_sample_glob: str = "oil_*.png",
+        demo_num_samples: int = 2,
+        demo_delay_seconds: float = 0.8,
         *args,
         **kwargs
     ):
@@ -38,8 +47,17 @@ class SentinelSearchOperator(BaseOperator):
         self.search_end = search_end
         self.event_time = event_time
         self.max_results = max_results
+        self.demo_fallback = demo_fallback
+        self.demo_samples_dir = demo_samples_dir
+        self.demo_sample_glob = demo_sample_glob
+        self.demo_num_samples = demo_num_samples
+        self.demo_delay_seconds = demo_delay_seconds
 
     def execute(self, context):
+        demo_enabled = self._is_demo_enabled(context)
+        if demo_enabled:
+            return self._demo_search()
+
         logging.info(f"🔍 Searching Sentinel-1 products for ROI: {self.roi_wkt}")
         logging.info(f"📅 Initial window: {self.search_start} to {self.search_end}")
 
@@ -93,6 +111,72 @@ class SentinelSearchOperator(BaseOperator):
         )
         logging.error(error_msg)
         raise AirflowException(error_msg)
+
+    def _is_demo_enabled(self, context) -> bool:
+        """
+        Enable demo fallback if explicitly configured via:
+        - operator arg demo_fallback=True
+        - env var SENTINEL_DEMO_FALLBACK=true/1
+        - dag_run.conf.demo_sentinel_fallback=true/1
+        """
+        if bool(self.demo_fallback):
+            return True
+
+        env_flag = os.getenv("SENTINEL_DEMO_FALLBACK", "").strip().lower()
+        if env_flag in {"1", "true", "yes", "on"}:
+            return True
+
+        try:
+            conf = (context.get("dag_run").conf or {}) if context.get("dag_run") else {}
+        except Exception:
+            conf = {}
+        conf_flag = str(conf.get("demo_sentinel_fallback", "")).strip().lower()
+        return conf_flag in {"1", "true", "yes", "on"}
+
+    def _demo_search(self):
+        logging.info("🎬 DEMO MODE: Skipping ASF search; selecting local sample PNGs instead.")
+        if self.demo_delay_seconds and self.demo_delay_seconds > 0:
+            time.sleep(float(self.demo_delay_seconds))
+
+        if not self.demo_samples_dir:
+            raise AirflowException(
+                "DEMO MODE enabled but demo_samples_dir was not provided to SentinelSearchOperator."
+            )
+
+        samples_dir = Path(self.demo_samples_dir)
+        if not samples_dir.exists():
+            raise AirflowException(f"DEMO MODE samples directory does not exist: {samples_dir}")
+
+        candidates = sorted(samples_dir.glob(self.demo_sample_glob))
+        if not candidates:
+            # fall back to any png if naming convention isn't present
+            candidates = sorted(samples_dir.glob("*.png"))
+        if not candidates:
+            raise AirflowException(f"DEMO MODE: No .png files found in {samples_dir}")
+
+        k = max(1, int(self.demo_num_samples or 1))
+        chosen = random.sample(candidates, k=min(k, len(candidates)))
+
+        products = []
+        for p in chosen:
+            products.append(
+                {
+                    "product_id": f"demo_local::{p.stem}",
+                    "filename": p.name,
+                    "fileName": p.name,
+                    "title": p.name,
+                    "platform": "SENTINEL-1",
+                    "processingLevel": "DEMO_SAMPLE",
+                    "startTime": None,
+                    "acquisition_date": None,
+                    "url": None,
+                    "local_path": str(p),
+                    "is_demo_sample": True,
+                }
+            )
+
+        logging.info("🎬 DEMO MODE: Selected %d local sample(s): %s", len(products), [d["filename"] for d in products])
+        return products
 
     def _search_products(self, start: str, end: str):
         """Query ASF for Sentinel-1 GRD products in the requested window and ROI."""

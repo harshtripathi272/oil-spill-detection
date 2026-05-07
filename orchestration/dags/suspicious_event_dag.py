@@ -44,6 +44,25 @@ SAR_TRIGGER_TOPIC = os.getenv('SAR_TRIGGER_TOPIC', 'sar.trigger.events')
 SAR_TRIGGER_GROUP_ID = os.getenv('AIRFLOW_SAR_TRIGGER_GROUP_ID', 'airflow-sar-trigger-v1')
 SAR_TRIGGER_POLL_TIMEOUT_MS = int(os.getenv('AIRFLOW_SAR_TRIGGER_POLL_TIMEOUT_MS', '1000'))
 
+DEMO_SENTINEL_FALLBACK = os.getenv("SUSPICIOUS_EVENT_DEMO_SENTINEL_FALLBACK", "true").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+
+DEFAULT_SAMPLES_DIR_CANDIDATES = [
+    Path("/datasets/images/train"),
+    REPO_ROOT / "datasets/images/train",
+]
+
+def _pick_samples_dir() -> str:
+    for p in DEFAULT_SAMPLES_DIR_CANDIDATES:
+        if p.exists():
+            return str(p)
+    # last-resort: point at repo-root datasets location (may be created later)
+    return str(REPO_ROOT / "datasets/images/train")
+
 
 def _get_event_payload(context):
     """Read payload from dag_run.conf (manual) or Kafka sensor XCom (default)."""
@@ -169,11 +188,15 @@ with DAG(
         search_start="{{ ti.xcom_pull(task_ids='prepare_search_params', key='return_value')['start_date'] }}",
         search_end="{{ ti.xcom_pull(task_ids='prepare_search_params', key='return_value')['end_date'] }}",
         event_time="{{ ti.xcom_pull(task_ids='prepare_search_params', key='return_value')['event_time'] }}",
+        demo_fallback=DEMO_SENTINEL_FALLBACK,
+        demo_samples_dir=_pick_samples_dir(),
+        demo_num_samples=2,
     )
 
     download_sentinel = SentinelDownloadOperator(
         task_id='download_sentinel',
-        download_dir='/data/user13/oilspill_ugq/oil-spill-detection/sentinel_data/downloads'
+        download_dir='/data/user13/oilspill_ugq/oil-spill-detection/sentinel_data/downloads',
+        preprocessed_dir='/data/user13/oilspill_ugq/oil-spill-detection/sentinel_data/preprocessed',
     )
 
     sar_inference = SARInferenceOperator(

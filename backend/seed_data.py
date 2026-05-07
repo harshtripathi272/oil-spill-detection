@@ -17,6 +17,7 @@ from app.models.incident import Incident, DagRun, TaskInstance, Metric, SystemSt
 from app.models.alerts import Alert
 from app.models.users import User
 from app.models.logs import LogEntry
+from app.models.predictions import Prediction
 from sqlalchemy.orm import Session
 
 def create_sample_incidents(db: Session):
@@ -26,7 +27,7 @@ def create_sample_incidents(db: Session):
     # Sample incident data
     incidents_data = [
         {
-            "id": "incident_001",
+            "id": "seed_incident_001",
             "latitude": 28.5383,
             "longitude": -88.0717,
             "confidence_score": 0.85,
@@ -36,7 +37,7 @@ def create_sample_incidents(db: Session):
             "processing_time": 45.2
         },
         {
-            "id": "incident_002",
+            "id": "seed_incident_002",
             "latitude": 29.7604,
             "longitude": -95.3698,
             "confidence_score": 0.72,
@@ -46,7 +47,7 @@ def create_sample_incidents(db: Session):
             "processing_time": 38.7
         },
         {
-            "id": "incident_003",
+            "id": "seed_incident_003",
             "latitude": 40.7128,
             "longitude": -74.0060,
             "confidence_score": 0.91,
@@ -56,7 +57,7 @@ def create_sample_incidents(db: Session):
             "processing_time": 52.1
         },
         {
-            "id": "incident_004",
+            "id": "seed_incident_004",
             "latitude": 34.0522,
             "longitude": -118.2437,
             "confidence_score": 0.68,
@@ -66,7 +67,7 @@ def create_sample_incidents(db: Session):
             "processing_time": 41.8
         },
         {
-            "id": "incident_005",
+            "id": "seed_incident_005",
             "latitude": 41.8781,
             "longitude": -87.6298,
             "confidence_score": 0.79,
@@ -214,7 +215,7 @@ def create_sample_users(db: Session):
 
     users_data = [
         {
-            "username": "admin",
+            "username": "seed_admin",
             "full_name": "System Administrator",
             "email": "admin@oilspill.gov",
             "role": "admin",
@@ -222,7 +223,7 @@ def create_sample_users(db: Session):
             "enabled": True
         },
         {
-            "username": "analyst1",
+            "username": "seed_analyst1",
             "full_name": "John Analyst",
             "email": "john.analyst@oilspill.gov",
             "role": "analyst",
@@ -230,7 +231,7 @@ def create_sample_users(db: Session):
             "enabled": True
         },
         {
-            "username": "analyst2",
+            "username": "seed_analyst2",
             "full_name": "Jane Analyst",
             "email": "jane.analyst@oilspill.gov",
             "role": "analyst",
@@ -355,6 +356,88 @@ def create_sample_logs(db: Session):
     print(f"Created {len(logs)} sample log entries")
     return logs
 
+def create_sample_predictions(db: Session, incidents):
+    """Create sample predictions"""
+    print("Creating sample predictions...")
+
+    predictions_data = [
+        {
+            "incident_id": incidents[0].id,
+            "dag_run_id": f"manual__{incidents[0].detection_time.strftime('%Y-%m-%dT%H:%M:%S')}",
+            "image_path": "sentinel_data/sar_images/sar_image_001.tif",
+            "prediction_image_path": "sentinel_data/predictions/prediction_001.jpg",
+            "prediction": "oil_spill",
+            "confidence": 0.85,
+            "bbox_coordinates": {"x1": 100, "y1": 200, "x2": 300, "y2": 400},
+            "mask_path": "sentinel_data/predictions/mask_001.png",
+            "model_version": "yolo26n-bbox-1024-merged",
+            "processing_time": 45.2,
+            "extra_metadata": {"model_type": "segmentation", "input_size": "1024x1024"}
+        },
+        {
+            "incident_id": incidents[1].id,
+            "dag_run_id": f"manual__{incidents[1].detection_time.strftime('%Y-%m-%dT%H:%M:%S')}",
+            "image_path": "sentinel_data/sar_images/sar_image_002.tif",
+            "prediction_image_path": "sentinel_data/predictions/prediction_002.jpg",
+            "prediction": "oil_spill",
+            "confidence": 0.72,
+            "bbox_coordinates": {"x1": 150, "y1": 250, "x2": 350, "y2": 450},
+            "mask_path": "sentinel_data/predictions/mask_002.png",
+            "model_version": "yolo26n-bbox-1024-merged",
+            "processing_time": 38.7,
+            "extra_metadata": {"model_type": "segmentation", "input_size": "1024x1024"}
+        },
+        {
+            "incident_id": incidents[2].id,
+            "dag_run_id": f"manual__{incidents[2].detection_time.strftime('%Y-%m-%dT%H:%M:%S')}",
+            "image_path": "sentinel_data/sar_images/sar_image_003.tif",
+            "prediction_image_path": "sentinel_data/predictions/prediction_003.jpg",
+            "prediction": "oil_spill",
+            "confidence": 0.91,
+            "bbox_coordinates": {"x1": 200, "y1": 300, "x2": 400, "y2": 500},
+            "mask_path": "sentinel_data/predictions/mask_003.png",
+            "model_version": "yolo26n-bbox-1024-merged",
+            "processing_time": 52.1,
+            "extra_metadata": {"model_type": "segmentation", "input_size": "1024x1024"}
+        },
+        {
+            "incident_id": incidents[3].id,
+            "dag_run_id": f"manual__{incidents[3].detection_time.strftime('%Y-%m-%dT%H:%M:%S')}",
+            "image_path": "sentinel_data/sar_images/sar_image_004.tif",
+            "prediction_image_path": "sentinel_data/predictions/prediction_004.jpg",
+            "prediction": "no_oil_spill",
+            "confidence": 0.68,
+            "bbox_coordinates": None,
+            "mask_path": None,
+            "model_version": "yolo26n-bbox-1024-merged",
+            "processing_time": 41.8,
+            "extra_metadata": {"model_type": "segmentation", "input_size": "1024x1024"}
+        },
+        {
+            "incident_id": incidents[4].id,
+            "dag_run_id": f"manual__{incidents[4].detection_time.strftime('%Y-%m-%dT%H:%M:%S')}",
+            "image_path": "sentinel_data/sar_images/sar_image_005.tif",
+            "prediction_image_path": "sentinel_data/predictions/prediction_005.jpg",
+            "prediction": "oil_spill",
+            "confidence": 0.79,
+            "bbox_coordinates": {"x1": 180, "y1": 220, "x2": 380, "y2": 420},
+            "mask_path": "sentinel_data/predictions/mask_005.png",
+            "model_version": "yolo26n-bbox-1024-merged",
+            "processing_time": 47.3,
+            "extra_metadata": {"model_type": "segmentation", "input_size": "1024x1024"}
+        }
+    ]
+
+    predictions = []
+    for data in predictions_data:
+        prediction = Prediction(**data)
+        predictions.append(prediction)
+        db.add(prediction)
+
+    db.commit()
+    print(f"Created {len(predictions)} sample predictions")
+    return predictions
+
 def main():
     """Main seeding function"""
     print("🌱 Seeding Oil Spill Detection Backend Database")
@@ -376,6 +459,7 @@ def main():
         create_sample_users(db)
         create_sample_system_status(db)
         create_sample_logs(db)
+        create_sample_predictions(db, incidents)
 
         print("=" * 50)
         print("✅ Database seeding completed successfully!")
@@ -387,6 +471,7 @@ def main():
         print("  • Sample users")
         print("  • System status entries")
         print("  • Sample log entries")
+        print("  • Sample predictions")
         print("\nYou can now start the backend server and test the APIs!")
 
     except Exception as e:

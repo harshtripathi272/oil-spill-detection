@@ -7,25 +7,49 @@ import json
 import time
 import logging
 from typing import Any, Optional
+from urllib.parse import urlparse
+import os
 
 logger = logging.getLogger(__name__)
 
-# ── Try to connect to Redis ───────────────────────────────────────────────────
+# Try to connect to Redis 
 _redis_client = None
+_redis_warned_unavailable = False
 
 def _get_redis():
     global _redis_client
+    global _redis_warned_unavailable
     if _redis_client is not None:
         return _redis_client
     try:
         import redis
-        r = redis.Redis(host="localhost", port=6379, db=0, socket_timeout=1)
+        redis_url = (
+            os.getenv("REDIS_URL")
+            or os.getenv("AIS_REDIS_URL")
+            or "redis://localhost:6379/0"
+        )
+        parsed = urlparse(redis_url)
+        host = parsed.hostname or "localhost"
+        port = parsed.port or 6379
+        db = int((parsed.path or "/0").lstrip("/") or "0")
+        password = parsed.password
+
+        r = redis.Redis(
+            host=host,
+            port=port,
+            db=db,
+            password=password,
+            socket_timeout=1,
+            socket_connect_timeout=1,
+        )
         r.ping()
         _redis_client = r
-        logger.info("✅ Redis cache connected at localhost:6379")
+        logger.info("✅ Redis cache connected at %s:%s (db=%s)", host, port, db)
         return _redis_client
     except Exception as e:
-        logger.warning(f"⚠️  Redis unavailable ({e}) — using in-memory fallback cache")
+        if not _redis_warned_unavailable:
+            _redis_warned_unavailable = True
+            logger.warning(f"⚠️  Redis unavailable ({e}) — using in-memory fallback cache")
         return None
 
 

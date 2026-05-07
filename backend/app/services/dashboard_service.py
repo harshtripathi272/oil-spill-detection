@@ -4,6 +4,7 @@ from typing import List, Dict, Any
 from datetime import datetime, timedelta
 from app.database import supabase
 from app.models.incident import Incident, DagRun, Metric
+from app.models.predictions import Prediction
 from app.schemas.dashboard import DashboardStats, ChartData, TimeSeriesData
 
 class DashboardService:
@@ -72,6 +73,24 @@ class DashboardService:
             DagRun.state == "failed"
         ).scalar()
 
+        # Prediction stats
+        total_predictions = self.db.query(func.count(Prediction.id)).scalar()
+        oil_spill_predictions = self.db.query(func.count(Prediction.id)).filter(
+            Prediction.prediction == "oil_spill"
+        ).scalar()
+        no_oil_spill_predictions = self.db.query(func.count(Prediction.id)).filter(
+            Prediction.prediction == "no_oil_spill"
+        ).scalar()
+        avg_prediction_confidence = self.db.query(func.avg(Prediction.confidence)).filter(
+            Prediction.confidence.isnot(None)
+        ).scalar() or 0.0
+
+        # Recent predictions (last 24 hours)
+        yesterday = datetime.utcnow() - timedelta(days=1)
+        recent_predictions_24h = self.db.query(func.count(Prediction.id)).filter(
+            Prediction.created_at >= yesterday
+        ).scalar()
+
         return DashboardStats(
             total_incidents=total_incidents,
             active_incidents=active_incidents,
@@ -81,7 +100,12 @@ class DashboardService:
             total_dag_runs=total_dag_runs,
             successful_runs=successful_runs,
             failed_runs=failed_runs,
-            avg_confidence_score=round(avg_confidence_score, 2)
+            avg_confidence_score=round(avg_confidence_score, 2),
+            total_predictions=total_predictions,
+            oil_spill_predictions=oil_spill_predictions,
+            no_oil_spill_predictions=no_oil_spill_predictions,
+            avg_prediction_confidence=round(avg_prediction_confidence, 3),
+            recent_predictions_24h=recent_predictions_24h
         )
 
     def get_recent_incidents(self, limit: int = 10) -> List[Incident]:

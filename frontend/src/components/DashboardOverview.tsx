@@ -3,12 +3,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { TrendingUp, TrendingDown, ChevronRight, AlertTriangle, GitBranch, Satellite, Ship, Activity } from 'lucide-react';
 import styles from '@/app/page.module.css';
-import { acknowledgeAlert, getLogStreamUrl, getSarImageUrl } from '@/lib/api';
+import { acknowledgeAlert, getLogStreamUrl, getSarImageUrl, getPredictionImageUrl, getWebSocketUrl } from '@/lib/api';
 import {
   useDashboardOverview, useAlerts, useConfidenceHistogram,
-  useDagFlow, useSarImages, useAnomalyStats,
+  useDagFlow, useSarImages, useAnomalyStats, useActiveRuns, usePredictionFiles,
 } from '@/lib/queries';
 import Link from 'next/link';
+import PredictionsViewer from './PredictionsViewer';
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
@@ -56,13 +57,16 @@ export default function DashboardOverview() {
   const { data: histogram } = useConfidenceHistogram();
   const { data: dagFlow } = useDagFlow();
   const { data: sarData } = useSarImages();
-  const { data: anomalyStats } = useAnomalyStats();
+  const { data: predictionFilesData } = usePredictionFiles();
+  const { data: anomalyStats, isError: isAnomalyError } = useAnomalyStats();
+  const { data: activeRuns } = useActiveRuns();
 
   /* SSE multi-service live log state */
   const [logLines, setLogLines] = useState<LogLine[]>([]);
   const [activeServices, setActiveServices] = useState<Set<string>>(
     new Set(['anomaly_detector', 'stream_processor', 'ingestion', 'trigger_bridge'])
   );
+  const [recentPredictions, setRecentPredictions] = useState<any[]>([]);
   const logRef = useRef<HTMLDivElement>(null);
   const esRef = useRef<EventSource | null>(null);
 
@@ -92,6 +96,52 @@ export default function DashboardOverview() {
     return () => esRef.current?.close();
   }, [activeServices]);
 
+  /* WebSocket for real-time dashboard updates */
+  useEffect(() => {
+    let ws: WebSocket | null = null;
+    let shouldReconnect = true;
+
+    const wsUrl = getWebSocketUrl();
+
+    const connectWebSocket = () => {
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        console.log('WebSocket connected for dashboard updates');
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'dashboard_update' && data.recent_predictions) {
+            setRecentPredictions(data.recent_predictions);
+          }
+        } catch (error) {
+          console.warn('WebSocket message parse error:', error);
+        }
+      };
+
+      ws.onerror = (event) => {
+        console.warn('WebSocket encountered an error', event);
+      };
+
+      ws.onclose = (event) => {
+        if (!shouldReconnect) return;
+        console.warn('WebSocket closed, reconnecting in 5s', event.code, event.reason);
+        setTimeout(() => {
+          connectWebSocket();
+        }, 5000);
+      };
+    };
+
+    connectWebSocket();
+
+    return () => {
+      shouldReconnect = false;
+      ws?.close();
+    };
+  }, []);
+
   /* Auto-scroll log feed */
   useEffect(() => {
     if (logRef.current) {
@@ -103,6 +153,8 @@ export default function DashboardOverview() {
   const stats = overview?.stats ?? {};
   const alerts = useMemo(() => (alertsData ?? []).slice(0, 3), [alertsData]);
   const sarImages = useMemo(() => sarData?.images ?? [], [sarData]);
+  const predictionFiles = useMemo(() => (predictionFilesData as any)?.images ?? [], [predictionFilesData]);
+  const activeRun = useMemo(() => (activeRuns && activeRuns.length > 0 ? activeRuns[0] : null), [activeRuns]);
 
   const handleAcknowledge = useCallback(async (alertId: number) => {
     try {
@@ -116,6 +168,10 @@ export default function DashboardOverview() {
     { title: 'Active Now',      value: stats.active_incidents ?? '--', color: 'var(--warning)', trend: 'Detected + Confirmed' },
     { title: 'Avg Confidence',  value: stats.avg_confidence_score != null ? `${(stats.avg_confidence_score * 100).toFixed(1)}%` : '--', color: 'var(--success)', trend: 'Detection quality' },
     { title: 'Resolved',        value: stats.resolved_incidents ?? '--', color: 'var(--text-secondary)', trend: 'Closed cases' },
+    { title: 'Total Predictions', value: stats.total_predictions ?? '--', color: 'var(--accent-purple)', trend: 'SAR inferences' },
+    { title: 'Oil Spill Detections', value: stats.oil_spill_predictions ?? '--', color: 'var(--error)', trend: 'Positive predictions' },
+    { title: 'Avg Prediction Conf.', value: stats.avg_prediction_confidence != null ? `${(stats.avg_prediction_confidence * 100).toFixed(1)}%` : '--', color: 'var(--info)', trend: 'Model accuracy' },
+    { title: 'Predictions (24h)', value: stats.recent_predictions_24h ?? '--', color: 'var(--success)', trend: 'Recent activity' },
   ];
 
   /* Status distribution (donut) */
@@ -268,6 +324,9 @@ export default function DashboardOverview() {
         </div>
       </div>
 
+      {/* Predictions Viewer */}
+      <PredictionsViewer predictions={recentPredictions} />
+
       {/* Multi-Service Live Log Feed */}
       <div className={`${styles.tableSection} card`} style={{ marginBottom: '1rem' }}>
         <div className={styles.tableHeader}>
@@ -343,23 +402,43 @@ export default function DashboardOverview() {
           </div>
           {dagFlow ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-              {dagFlow.tasks.map((task: any, idx: number) => (
-                <div key={task.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
-                  <div style={{
-                    width: 22, height: 22, borderRadius: '50%', background: 'var(--accent-blue)',
-                    color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 9, fontWeight: 700, flexShrink: 0, marginTop: 2,
-                  }}>{idx + 1}</div>
-                  <div style={{
-                    flex: 1, padding: '0.35rem 0.6rem',
-                    background: 'var(--bg-tertiary)', borderRadius: 5,
-                    border: '1px solid var(--border-primary)',
-                  }}>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)' }}>{task.label}</div>
-                    <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>{task.description}</div>
+              {dagFlow.tasks.map((task: any, idx: number) => {
+                const taskState = activeRun?.tasks?.[task.id];
+                const isRunning = taskState === 'running';
+                const isSuccess = taskState === 'success';
+                const isFailed = taskState === 'failed';
+                
+                const dotColor = isRunning ? '#3b82f6' : isSuccess ? '#10b981' : isFailed ? '#ef4444' : 'var(--accent-blue)';
+                const bgColor = isRunning ? 'rgba(59, 130, 246, 0.1)' : isSuccess ? 'rgba(16, 185, 129, 0.1)' : isFailed ? 'rgba(239, 68, 68, 0.1)' : 'var(--bg-tertiary)';
+                const borderColor = isRunning ? '#3b82f6' : isSuccess ? '#10b981' : isFailed ? '#ef4444' : 'var(--border-primary)';
+
+                return (
+                  <div key={task.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
+                    <div style={{
+                      width: 22, height: 22, borderRadius: '50%', background: dotColor,
+                      color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 9, fontWeight: 700, flexShrink: 0, marginTop: 2,
+                      boxShadow: isRunning ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none',
+                    }}>{idx + 1}</div>
+                    <div style={{
+                      flex: 1, padding: '0.35rem 0.6rem',
+                      background: bgColor, borderRadius: 5,
+                      border: `1px solid ${borderColor}`,
+                      transition: 'all 0.3s ease',
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)' }}>{task.label}</div>
+                        {taskState && (
+                          <span style={{ fontSize: 8, fontWeight: 700, textTransform: 'uppercase', color: dotColor }}>
+                            {taskState}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>{task.description}</div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>Loading…</span>
@@ -388,7 +467,11 @@ export default function DashboardOverview() {
                   </div>
                 ))}
               </div>
-            ) : <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>Loading…</span>}
+            ) : isAnomalyError ? (
+              <span style={{ color: 'var(--danger)', fontSize: 12 }}>Unable to load anomaly summary</span>
+            ) : (
+              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>Loading…</span>
+            )}
           </div>
 
           {/* SAR Images */}
@@ -404,6 +487,24 @@ export default function DashboardOverview() {
                     style={{ width: '100%', height: 72, objectFit: 'cover' }} />
                   <div style={{ padding: '0.25rem 0.4rem', fontSize: 8, color: 'var(--text-muted)' }}>
                     {img.granule_id.split('_').slice(-3, -1).join(' ')}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: '1.25rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+              <Satellite size={16} style={{ color: 'var(--accent-purple)' }} />
+              <h3 className={styles.cardTitle} style={{ margin: 0 }}>Prediction Outputs ({predictionFiles.length})</h3>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.4rem' }}>
+              {predictionFiles.slice(0, 3).map((img: any, i: number) => (
+                <div key={i} style={{ borderRadius: 5, overflow: 'hidden', border: '1px solid var(--border-primary)' }}>
+                  <img src={getPredictionImageUrl(img.filename)} alt={img.filename}
+                    style={{ width: '100%', height: 72, objectFit: 'cover' }} />
+                  <div style={{ padding: '0.25rem 0.4rem', fontSize: 8, color: 'var(--text-muted)' }}>
+                    {img.source_image ? `source: ${img.source_image}` : img.filename}
                   </div>
                 </div>
               ))}

@@ -1,7 +1,7 @@
-from sqlalchemy import Column, Integer, String, DateTime, Float, Text, Boolean, ForeignKey, JSON
+from sqlalchemy import Column, Integer, String, Float, Text, Boolean, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from app.database import Base
+from app.database import Base, UTCDateTime
 
 class Incident(Base):
     __tablename__ = "incidents"
@@ -10,7 +10,7 @@ class Incident(Base):
     latitude = Column(Float, nullable=False)
     longitude = Column(Float, nullable=False)
     confidence_score = Column(Float, nullable=True)
-    detection_time = Column(DateTime(timezone=True), server_default=func.now())
+    detection_time = Column(UTCDateTime(timezone=True), server_default=func.now())
     status = Column(String, default="detected")  # detected, confirmed, false_positive, resolved
     bbox_coordinates = Column(JSON, nullable=True)  # Store bounding box as JSON
     sar_image_path = Column(String, nullable=True)
@@ -30,8 +30,8 @@ class DagRun(Base):
     run_id = Column(String, nullable=False, unique=True)
     incident_id = Column(String, ForeignKey("incidents.id"), nullable=True)
     state = Column(String, nullable=False)  # success, failed, running, etc.
-    start_date = Column(DateTime(timezone=True), nullable=True)
-    end_date = Column(DateTime(timezone=True), nullable=True)
+    start_date = Column(UTCDateTime(timezone=True), nullable=True)
+    end_date = Column(UTCDateTime(timezone=True), nullable=True)
     execution_time = Column(Float, nullable=True)  # Total execution time in seconds
 
     # Relationships
@@ -45,8 +45,8 @@ class TaskInstance(Base):
     dag_run_id = Column(Integer, ForeignKey("dag_runs.id"))
     task_id = Column(String, nullable=False)
     state = Column(String, nullable=False)
-    start_date = Column(DateTime(timezone=True), nullable=True)
-    end_date = Column(DateTime(timezone=True), nullable=True)
+    start_date = Column(UTCDateTime(timezone=True), nullable=True)
+    end_date = Column(UTCDateTime(timezone=True), nullable=True)
     duration = Column(Float, nullable=True)
 
     # Relationships
@@ -58,7 +58,7 @@ class Metric(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
     value = Column(Float, nullable=False)
-    timestamp = Column(DateTime(timezone=True), server_default=func.now())
+    timestamp = Column(UTCDateTime(timezone=True), server_default=func.now())
     category = Column(String, nullable=False)  # system, model, processing, etc.
     extra_metadata = Column(JSON, nullable=True)
 
@@ -68,5 +68,5 @@ class SystemStatus(Base):
     id = Column(Integer, primary_key=True, index=True)
     component = Column(String, nullable=False)
     status = Column(String, nullable=False)  # healthy, warning, error
-    last_check = Column(DateTime(timezone=True), server_default=func.now())
+    last_check = Column(UTCDateTime(timezone=True), server_default=func.now())
     details = Column(JSON, nullable=True)
