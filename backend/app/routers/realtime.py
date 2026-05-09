@@ -4,6 +4,7 @@ from app.database import get_db
 from app.services.dashboard_service import DashboardService
 from app.services.system_service import build_system_health
 from app.models.incident import Incident
+from app.models.predictions import Prediction
 
 router = APIRouter()
 
@@ -42,6 +43,7 @@ async def websocket_updates(websocket: WebSocket):
                 stats = service.get_dashboard_stats()
                 health = build_system_health(db)
                 incidents = db.query(Incident).order_by(Incident.detection_time.desc()).limit(10).all()
+                predictions = db.query(Prediction).order_by(Prediction.created_at.desc()).limit(5).all()
                 
                 alert_items = [
                     {
@@ -57,12 +59,26 @@ async def websocket_updates(websocket: WebSocket):
                     for incident in incidents
                 ]
 
+                prediction_items = [
+                    {
+                        "id": prediction.id,
+                        "incident_id": prediction.incident_id,
+                        "prediction": prediction.prediction,
+                        "confidence": prediction.confidence,
+                        "prediction_image_path": prediction.prediction_image_path,
+                        "bbox_coordinates": prediction.bbox_coordinates,
+                        "created_at": prediction.created_at.isoformat() if prediction.created_at else None
+                    }
+                    for prediction in predictions
+                ]
+
                 # Send ONLY to this connection to avoid N*N message explosion
                 await websocket.send_json({
                     "type": "dashboard_update",
                     "stats": stats.model_dump() if hasattr(stats, "model_dump") else stats,
                     "system_health": health.model_dump() if hasattr(health, "model_dump") else health,
                     "alerts": alert_items,
+                    "recent_predictions": prediction_items,
                 })
             finally:
                 db.close()

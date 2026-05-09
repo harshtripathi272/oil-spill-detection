@@ -69,6 +69,11 @@ class DashboardStats(BaseModel):
     successful_runs: int
     failed_runs: int
     avg_confidence_score: float
+    total_predictions: int = 0
+    oil_spill_predictions: int = 0
+    no_oil_spill_predictions: int = 0
+    avg_prediction_confidence: float = 0.0
+    recent_predictions_24h: int = 0
 
 class TimeSeriesData(BaseModel):
     timestamps: List[datetime]

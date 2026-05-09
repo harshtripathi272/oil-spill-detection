@@ -4,16 +4,37 @@ from typing import List, Dict, Any
 from datetime import datetime, timedelta
 from app.database import supabase
 from app.models.incident import Incident, DagRun, Metric
+from app.models.predictions import Prediction
 from app.schemas.dashboard import DashboardStats, ChartData, TimeSeriesData
 
 class DashboardService:
     def __init__(self, db: Session):
         self.db = db
 
+    def _load_supabase_incidents(self, require_created_at: bool = False):
+        incidents = supabase.list_incidents(limit=10000)
+        if require_created_at:
+            return [i for i in incidents if i.get('created_at')]
+        return incidents
+
+    def _average_by_date(self, incidents: List[Dict[str, Any]], value_key: str):
+        totals: Dict[str, float] = {}
+        counts: Dict[str, int] = {}
+        for incident in incidents:
+            value = incident.get(value_key)
+            if value is None:
+                continue
+            date_key = incident.get('created_at')[:10]
+            totals[date_key] = totals.get(date_key, 0.0) + value
+            counts[date_key] = counts.get(date_key, 0) + 1
+        dates = sorted(totals.keys())
+        values = [round(totals[d] / counts[d], 2) for d in dates]
+        return dates, values
+
     def get_dashboard_stats(self) -> DashboardStats:
         """Get overall dashboard statistics"""
         if supabase.is_configured:
-            incidents = supabase.list_incidents(limit=10000)
+            incidents = self._load_supabase_incidents()
             total_incidents = len(incidents)
             active_incidents = len([i for i in incidents if i['status'] in ['detected', 'confirmed', 'DETECTED', 'VERIFIED']])
             resolved_incidents = len([i for i in incidents if i['status'] in ['resolved']])
@@ -52,6 +73,24 @@ class DashboardService:
             DagRun.state == "failed"
         ).scalar()
 
+        # Prediction stats
+        total_predictions = self.db.query(func.count(Prediction.id)).scalar()
+        oil_spill_predictions = self.db.query(func.count(Prediction.id)).filter(
+            Prediction.prediction == "oil_spill"
+        ).scalar()
+        no_oil_spill_predictions = self.db.query(func.count(Prediction.id)).filter(
+            Prediction.prediction == "no_oil_spill"
+        ).scalar()
+        avg_prediction_confidence = self.db.query(func.avg(Prediction.confidence)).filter(
+            Prediction.confidence.isnot(None)
+        ).scalar() or 0.0
+
+        # Recent predictions (last 24 hours)
+        yesterday = datetime.utcnow() - timedelta(days=1)
+        recent_predictions_24h = self.db.query(func.count(Prediction.id)).filter(
+            Prediction.created_at >= yesterday
+        ).scalar()
+
         return DashboardStats(
             total_incidents=total_incidents,
             active_incidents=active_incidents,
@@ -61,15 +100,20 @@ class DashboardService:
             total_dag_runs=total_dag_runs,
             successful_runs=successful_runs,
             failed_runs=failed_runs,
-            avg_confidence_score=round(avg_confidence_score, 2)
+            avg_confidence_score=round(avg_confidence_score, 2),
+            total_predictions=total_predictions,
+            oil_spill_predictions=oil_spill_predictions,
+            no_oil_spill_predictions=no_oil_spill_predictions,
+            avg_prediction_confidence=round(avg_prediction_confidence, 3),
+            recent_predictions_24h=recent_predictions_24h
         )
 
     def get_recent_incidents(self, limit: int = 10) -> List[Incident]:
         """Get recent incidents"""
         if supabase.is_configured:
-            incidents = supabase.list_incidents(limit=10000)
+            incidents = self._load_supabase_incidents(require_created_at=True)
             sorted_incidents = sorted(
-                [i for i in incidents if i.get('created_at')],
+                incidents,
                 key=lambda x: x.get('created_at'),
                 reverse=True
             )
@@ -84,9 +128,8 @@ class DashboardService:
         start_date = datetime.utcnow() - timedelta(days=days)
 
         if supabase.is_configured:
-            incidents = [i for i in supabase.list_incidents(limit=10000)
-                         if i.get('created_at')]
-            counts_by_date = {}
+            incidents = self._load_supabase_incidents(require_created_at=True)
+            counts_by_date: Dict[str, int] = {}
             for incident in incidents:
                 date_key = incident.get('created_at')[:10]
                 counts_by_date[date_key] = counts_by_date.get(date_key, 0) + 1
@@ -120,17 +163,8 @@ class DashboardService:
         start_date = datetime.utcnow() - timedelta(days=days)
 
         if supabase.is_configured:
-            incidents = [i for i in supabase.list_incidents(limit=10000) if i.get('created_at')]
-            times_by_date = {}
-            counts_by_date = {}
-            for incident in incidents:
-                if incident.get('processing_time') is None:
-                    continue
-                date_key = incident.get('created_at')[:10]
-                times_by_date[date_key] = times_by_date.get(date_key, 0.0) + incident['processing_time']
-                counts_by_date[date_key] = counts_by_date.get(date_key, 0) + 1
-            dates = sorted(times_by_date.keys())
-            times = [round(times_by_date[d] / counts_by_date[d], 2) for d in dates]
+            incidents = self._load_supabase_incidents(require_created_at=True)
+            dates, times = self._average_by_date(incidents, 'processing_time')
         else:
             results = self.db.query(
                 func.date(Incident.detection_time).label('date'),
@@ -158,7 +192,7 @@ class DashboardService:
     def get_status_distribution(self) -> ChartData:
         """Get incident status distribution"""
         if supabase.is_configured:
-            incidents = supabase.list_incidents(limit=10000)
+            incidents = self._load_supabase_incidents()
             distribution = {}
             for incident in incidents:
                 status = incident.get('status')
@@ -189,18 +223,8 @@ class DashboardService:
         start_date = datetime.utcnow() - timedelta(days=days)
 
         if supabase.is_configured:
-            incidents = [i for i in supabase.list_incidents(limit=10000) if i.get('created_at')]
-            confidence_by_date = {}
-            counts_by_date = {}
-            for incident in incidents:
-                confidence = incident.get('confidence_score')
-                if confidence is None:
-                    continue
-                date_key = incident.get('created_at')[:10]
-                confidence_by_date[date_key] = confidence_by_date.get(date_key, 0.0) + confidence
-                counts_by_date[date_key] = counts_by_date.get(date_key, 0) + 1
-            dates = sorted(confidence_by_date.keys())
-            confidences = [round(confidence_by_date[d] / counts_by_date[d], 2) for d in dates]
+            incidents = self._load_supabase_incidents(require_created_at=True)
+            dates, confidences = self._average_by_date(incidents, 'confidence_score')
         else:
             results = self.db.query(
                 func.date(Incident.detection_time).label('date'),

@@ -1,23 +1,20 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { TrendingUp, TrendingDown, ChevronRight, Activity, AlertTriangle, GitBranch, Satellite, BarChart3, Ship } from 'lucide-react';
+import { TrendingUp, TrendingDown, ChevronRight, AlertTriangle, GitBranch, Satellite, Ship, Activity } from 'lucide-react';
 import styles from '@/app/page.module.css';
+import { acknowledgeAlert, getLogStreamUrl, getSarImageUrl, getPredictionImageUrl, getWebSocketUrl } from '@/lib/api';
 import {
-  fetchDashboardOverview, fetchAlerts, fetchLogFileContent,
-  getWebSocketUrl, acknowledgeAlert, fetchDagFlow,
-  fetchSarImages, fetchAnomalyStats, getSarImageUrl,
-} from '@/lib/api';
+  useDashboardOverview, useAlerts, useConfidenceHistogram,
+  useDagFlow, useSarImages, useAnomalyStats, useActiveRuns, usePredictionFiles,
+} from '@/lib/queries';
 import Link from 'next/link';
+import PredictionsViewer from './PredictionsViewer';
 
-interface DashboardData {
-  stats?: any;
-  alerts?: any[];
-  incidents?: any[];
-  status_distribution?: any;
-}
+/* ── Types ─────────────────────────────────────────────────────────────── */
 
 interface LogLine {
+  service: string;
   raw: string;
   level: string;
   timestamp: string;
@@ -25,188 +22,186 @@ interface LogLine {
   isAnomaly: boolean;
 }
 
-function parseLine(raw: string): LogLine {
-  const m = raw.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),\d+ - \S+ - (\w+) - (.+)$/);
-  const timestamp = m ? m[1] : '';
-  const level = m ? m[2] : 'INFO';
-  const message = m ? m[3].trim() : raw.trim();
-  const isAnomaly = raw.includes('[ANOMALY DETECTED]') || raw.includes('🚨');
-  return { raw, level, timestamp, message, isAnomaly };
+const SVC_COLORS: Record<string, string> = {
+  anomaly_detector: '#f59e0b',
+  stream_processor: '#3b82f6',
+  ingestion:        '#22c55e',
+  trigger_bridge:   '#a78bfa',
+};
+
+const SVC_LABELS: Record<string, string> = {
+  anomaly_detector: 'ANOMALY',
+  stream_processor: 'STREAM',
+  ingestion:        'INGEST',
+  trigger_bridge:   'BRIDGE',
+};
+
+function parseSSELine(raw: string, service: string): LogLine {
+  const isAnomaly = raw.includes('[ANOMALY DETECTED]') || raw.includes('🚨') || raw.includes('SAR trigger');
+  const m = raw.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/);
+  const timestamp = m ? m[1].split(' ')[1] : '';
+  let level = 'INFO';
+  if (raw.includes(' ERROR ') || raw.includes('- ERROR -')) level = 'ERROR';
+  else if (raw.includes(' WARNING ') || raw.includes('- WARNING -')) level = 'WARN';
+  const msgM = raw.match(/- (INFO|WARNING|ERROR) - (.+)$/);
+  const message = msgM ? msgM[2].trim() : raw.trim();
+  return { service, raw, level, timestamp, message, isAnomaly };
 }
 
+/* ── Component ─────────────────────────────────────────────────────────── */
+
 export default function DashboardOverview() {
-  const [data, setData] = useState<DashboardData>({});
-  const [loading, setLoading] = useState(true);
+  /* React Query — client-side cached data */
+  const { data: overview } = useDashboardOverview();
+  const { data: alertsData, refetch: refetchAlerts } = useAlerts();
+  const { data: histogram } = useConfidenceHistogram();
+  const { data: dagFlow } = useDagFlow();
+  const { data: sarData } = useSarImages();
+  const { data: predictionFilesData } = usePredictionFiles();
+  const { data: anomalyStats, isError: isAnomalyError } = useAnomalyStats();
+  const { data: activeRuns } = useActiveRuns();
+
+  /* SSE multi-service live log state */
   const [logLines, setLogLines] = useState<LogLine[]>([]);
+  const [activeServices, setActiveServices] = useState<Set<string>>(
+    new Set(['anomaly_detector', 'stream_processor', 'ingestion', 'trigger_bridge'])
+  );
+  const [recentPredictions, setRecentPredictions] = useState<any[]>([]);
   const logRef = useRef<HTMLDivElement>(null);
-  const isFetchingLogs = useRef(false);
+  const esRef = useRef<EventSource | null>(null);
 
-  /* Pipeline state */
-  const [dagFlow, setDagFlow] = useState<any>(null);
-  const [sarImages, setSarImages] = useState<any[]>([]);
-  const [anomalyStats, setAnomalyStats] = useState<any>(null);
-
-  const fetchLogs = useCallback(async () => {
-    if (isFetchingLogs.current) return;
-    isFetchingLogs.current = true;
-    try {
-      const result = await fetchLogFileContent('anomaly_detector.log', 60);
-      const lines: LogLine[] = (result.content as string)
-        .split('\n')
-        .filter((l: string) => l.trim())
-        .map(parseLine);
-      setLogLines(lines);
-    } catch { /* ignore */ } finally {
-      isFetchingLogs.current = false;
-    }
-  }, []);
-
+  /* Connect / reconnect SSE */
   useEffect(() => {
-    async function init() {
-      try {
-        const [overview, alertsData, dagData, sarData, anomalyData] = await Promise.all([
-          fetchDashboardOverview(),
-          fetchAlerts(),
-          fetchDagFlow().catch(() => null),
-          fetchSarImages().catch(() => ({ images: [] })),
-          fetchAnomalyStats().catch(() => null),
-        ]);
-        setData({
-          stats: overview.stats,
-          alerts: alertsData.slice(0, 3),
-          incidents: overview.recent_incidents,
-          status_distribution: overview.status_distribution,
-        });
-        setDagFlow(dagData);
-        setSarImages(sarData.images || []);
-        setAnomalyStats(anomalyData);
-      } catch (err) {
-        console.error('Dashboard fetch error:', err);
-      } finally {
-        setLoading(false);
-      }
-    }
-    init();
-
-    fetchLogs();
-    const logTimer = setInterval(fetchLogs, 8000);
-
-    let socket: WebSocket | null = null;
     const connect = () => {
-      try {
-        socket = new WebSocket(getWebSocketUrl());
-        socket.addEventListener('message', (event) => {
-          try {
-            const msg = JSON.parse(event.data);
-            if (msg.type === 'dashboard_update') {
-              setData((cur) => ({
-                ...cur,
-                stats: msg.stats ?? cur.stats,
-                alerts: msg.alerts?.slice(0, 3) ?? cur.alerts,
-              }));
-            }
-          } catch { /* ignore bad JSON */ }
-        });
-        socket.addEventListener('close', () => setTimeout(connect, 5000));
-      } catch { /* swallow */ }
+      esRef.current?.close();
+      const url = getLogStreamUrl([...activeServices], 15);
+      const es = new EventSource(url);
+      es.onmessage = (evt) => {
+        try {
+          const payload = JSON.parse(evt.data);
+          const line = parseSSELine(payload.line, payload.service);
+          setLogLines((prev) => {
+            const next = [...prev, line];
+            return next.slice(-200); // keep last 200 lines
+          });
+        } catch { /* skip bad frames */ }
+      };
+      es.onerror = () => {
+        es.close();
+        setTimeout(connect, 5000);
+      };
+      esRef.current = es;
     };
     connect();
-    return () => {
-      socket?.close();
-      clearInterval(logTimer);
-    };
-  }, [fetchLogs]);
+    return () => esRef.current?.close();
+  }, [activeServices]);
 
+  /* WebSocket for real-time dashboard updates */
+  useEffect(() => {
+    let ws: WebSocket | null = null;
+    let shouldReconnect = true;
+
+    const wsUrl = getWebSocketUrl();
+
+    const connectWebSocket = () => {
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        console.log('WebSocket connected for dashboard updates');
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'dashboard_update' && data.recent_predictions) {
+            setRecentPredictions(data.recent_predictions);
+          }
+        } catch (error) {
+          console.warn('WebSocket message parse error:', error);
+        }
+      };
+
+      ws.onerror = (event) => {
+        console.warn('WebSocket encountered an error', event);
+      };
+
+      ws.onclose = (event) => {
+        if (!shouldReconnect) return;
+        console.warn('WebSocket closed, reconnecting in 5s', event.code, event.reason);
+        setTimeout(() => {
+          connectWebSocket();
+        }, 5000);
+      };
+    };
+
+    connectWebSocket();
+
+    return () => {
+      shouldReconnect = false;
+      ws?.close();
+    };
+  }, []);
+
+  /* Auto-scroll log feed */
   useEffect(() => {
     if (logRef.current) {
       logRef.current.scrollTop = logRef.current.scrollHeight;
     }
   }, [logLines]);
 
-  const stats = data.stats || {};
-  const alerts = useMemo(() => data.alerts || [], [data.alerts]);
-  const incidents = useMemo(() => data.incidents || [], [data.incidents]);
+  /* Derived data */
+  const stats = overview?.stats ?? {};
+  const alerts = useMemo(() => (alertsData ?? []).slice(0, 3), [alertsData]);
+  const sarImages = useMemo(() => sarData?.images ?? [], [sarData]);
+  const predictionFiles = useMemo(() => (predictionFilesData as any)?.images ?? [], [predictionFilesData]);
+  const activeRun = useMemo(() => (activeRuns && activeRuns.length > 0 ? activeRuns[0] : null), [activeRuns]);
 
-  /* Compute real status distribution */
-  const statusDist = useMemo(() => {
-    const sd = data.status_distribution?.data;
-    if (!sd?.statuses || !sd?.counts) return [];
-    const total = sd.counts.reduce((a: number, b: number) => a + b, 0) || 1;
-    const colors: Record<string, string> = {
-      detected: 'var(--status-detected)',
-      confirmed: 'var(--status-confirmed)',
-      resolved: 'var(--status-resolved)',
-      false_positive: 'var(--status-false-pos)',
-    };
-    return sd.statuses.map((s: string, i: number) => ({
-      label: s.replace(/_/g, ' '),
-      count: sd.counts[i],
-      pct: Math.round((sd.counts[i] / total) * 100),
-      color: colors[s.toLowerCase()] || 'var(--text-dim)',
-    }));
-  }, [data.status_distribution]);
-
-  const handleAcknowledge = async (alertId: number) => {
+  const handleAcknowledge = useCallback(async (alertId: number) => {
     try {
       await acknowledgeAlert(alertId);
-      setData((cur) => ({
-        ...cur,
-        alerts: (cur.alerts || []).filter((a) => a.id !== alertId),
-      }));
+      await refetchAlerts();
     } catch { /* ignore */ }
-  };
+  }, [refetchAlerts]);
 
   const kpis = [
-    {
-      title: 'Total Incidents',
-      value: stats.total_incidents ?? '--',
-      trend: 'All time',
-      trendDir: 'up' as const,
-      color: 'var(--accent-blue)',
-    },
-    {
-      title: 'Active Now',
-      value: stats.active_incidents ?? '--',
-      trend: 'Detected + Confirmed',
-      trendDir: 'up' as const,
-      color: 'var(--warning)',
-    },
-    {
-      title: 'Avg Confidence',
-      value: stats.avg_confidence_score != null
-        ? `${(stats.avg_confidence_score * 100).toFixed(1)}%`
-        : '--',
-      trend: 'Detection quality',
-      trendDir: 'up' as const,
-      color: 'var(--success)',
-    },
-    {
-      title: 'Resolved',
-      value: stats.resolved_incidents ?? '--',
-      trend: 'Closed cases',
-      trendDir: 'down' as const,
-      color: 'var(--text-secondary)',
-    },
+    { title: 'Total Incidents', value: stats.total_incidents ?? '--', color: 'var(--accent-blue)', trend: 'All time' },
+    { title: 'Active Now',      value: stats.active_incidents ?? '--', color: 'var(--warning)', trend: 'Detected + Confirmed' },
+    { title: 'Avg Confidence',  value: stats.avg_confidence_score != null ? `${(stats.avg_confidence_score * 100).toFixed(1)}%` : '--', color: 'var(--success)', trend: 'Detection quality' },
+    { title: 'Resolved',        value: stats.resolved_incidents ?? '--', color: 'var(--text-secondary)', trend: 'Closed cases' },
+    { title: 'Total Predictions', value: stats.total_predictions ?? '--', color: 'var(--accent-purple)', trend: 'SAR inferences' },
+    { title: 'Oil Spill Detections', value: stats.oil_spill_predictions ?? '--', color: 'var(--error)', trend: 'Positive predictions' },
+    { title: 'Avg Prediction Conf.', value: stats.avg_prediction_confidence != null ? `${(stats.avg_prediction_confidence * 100).toFixed(1)}%` : '--', color: 'var(--info)', trend: 'Model accuracy' },
+    { title: 'Predictions (24h)', value: stats.recent_predictions_24h ?? '--', color: 'var(--success)', trend: 'Recent activity' },
   ];
 
-  /* Compute real bar chart from incidents_over_time if available, else from incidents */
-  const barData = useMemo(() => {
-    const iot = (data as any)?.incidents_over_time?.data;
-    if (iot?.dates?.length > 0 && iot?.counts?.length > 0) {
-      return iot.counts as number[];
-    }
-    // Fallback: group incidents by day
-    if (incidents.length === 0) return [];
-    const byCounts: Record<string, number> = {};
-    incidents.forEach((inc: any) => {
-      if (!inc.detection_time) return;
-      const d = inc.detection_time.split('T')[0];
-      byCounts[d] = (byCounts[d] || 0) + 1;
-    });
-    return Object.values(byCounts);
-  }, [data, incidents]);
+  /* Status distribution (donut) */
+  const statusDist = useMemo(() => {
+    const sd = overview?.status_distribution?.data;
+    if (!sd?.statuses?.length) return [];
+    const total = sd.counts.reduce((a: number, b: number) => a + b, 0) || 1;
+    const colors: Record<string, string> = {
+      detected: '#f59e0b', confirmed: '#ef4444', resolved: '#22c55e', false_positive: '#6b7280',
+    };
+    return sd.statuses.map((s: string, i: number) => ({
+      label: s.replace(/_/g, ' '), count: sd.counts[i],
+      pct: Math.round((sd.counts[i] / total) * 100),
+      color: colors[s.toLowerCase()] || '#6b7280',
+    }));
+  }, [overview]);
 
-  const maxBar = Math.max(1, ...barData);
+  /* Confidence histogram bars */
+  const histLabels = histogram?.labels ?? [];
+  const histCounts = histogram?.counts ?? [];
+  const histMax = Math.max(1, ...histCounts);
+
+  /* Toggle service filter */
+  const toggleService = (svc: string) => {
+    setActiveServices((prev) => {
+      const next = new Set(prev);
+      next.has(svc) ? next.delete(svc) : next.add(svc);
+      return next.size > 0 ? next : prev; // always keep at least 1
+    });
+  };
 
   return (
     <div className={`${styles.page} animate-enter`}>
@@ -216,38 +211,52 @@ export default function DashboardOverview() {
           <div key={i} className={`${styles.kpiCard} card`}>
             <div className={styles.kpiTop}>
               <span className={styles.kpiTitle}>{kpi.title}</span>
-              <span className={styles.kpiIcon} style={{ color: kpi.color }}>●</span>
+              <span style={{ color: kpi.color }}>●</span>
             </div>
             <div className={styles.kpiValue} style={{ color: kpi.color }}>{kpi.value}</div>
             <div className={styles.kpiBottom}>
-              <span className={`${styles.kpiTrend} ${kpi.trendDir === 'up' ? styles.trendUp : styles.trendDown}`}>
-                {kpi.trendDir === 'up' ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-                {kpi.trend}
+              <span className={styles.kpiTrend}>
+                <TrendingUp size={12} /> {kpi.trend}
               </span>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Middle Row: Charts + Alerts */}
+      {/* Charts + Alerts */}
       <div className={styles.midRow}>
-        {/* Incident Trends — real data */}
+        {/* Confidence Score Distribution (replaces flat Incident Trends chart) */}
         <div className={`${styles.chartCard} card`}>
-          <h3 className={styles.cardTitle}>Incident Trends</h3>
-          <div className={styles.barChart}>
-            {barData.length === 0 ? (
-              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>No incident data yet</span>
+          <h3 className={styles.cardTitle}>
+            Anomaly Confidence Scores
+            <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 8, fontWeight: 400 }}>
+              {histogram?.total ?? 0} detections
+            </span>
+          </h3>
+          <div className={styles.barChart} style={{ alignItems: 'flex-end', gap: '0.5rem', padding: '0.5rem 0' }}>
+            {histCounts.length === 0 ? (
+              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>No data yet</span>
             ) : (
-              barData.map((h, i) => (
-                <div key={i} className={styles.barWrap}>
-                  <div className={styles.bar} style={{ height: `${(h / maxBar) * 100}px` }} />
+              histLabels.map((label: string, i: number) => (
+                <div key={i} className={styles.barWrap} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                  <span style={{ fontSize: 10, color: 'var(--text-secondary)', fontWeight: 600 }}>{histCounts[i]}</span>
+                  <div
+                    className={styles.bar}
+                    style={{
+                      height: `${(histCounts[i] / histMax) * 90}px`,
+                      background: i === 3 ? '#ef4444' : i === 2 ? '#f59e0b' : i === 1 ? '#3b82f6' : '#22c55e',
+                      borderRadius: '4px 4px 0 0',
+                      width: '100%',
+                    }}
+                  />
+                  <span style={{ fontSize: 9, color: 'var(--text-muted)', textAlign: 'center' }}>{label}</span>
                 </div>
               ))
             )}
           </div>
         </div>
 
-        {/* Status Distribution — real data */}
+        {/* Status Distribution Donut */}
         <div className={`${styles.chartCard} card`}>
           <h3 className={styles.cardTitle}>Status Distribution</h3>
           <div className={styles.distGrid}>
@@ -257,10 +266,8 @@ export default function DashboardOverview() {
                 {statusDist.reduce((acc: any[], item: any, idx: number) => {
                   const offset = idx === 0 ? 25 : acc[idx - 1].nextOffset;
                   acc.push({
-                    el: (
-                      <circle key={idx} cx="18" cy="18" r="15.9" fill="none" stroke={item.color} strokeWidth="3"
-                        strokeDasharray={`${item.pct} ${100 - item.pct}`} strokeDashoffset={offset} strokeLinecap="round" />
-                    ),
+                    el: <circle key={idx} cx="18" cy="18" r="15.9" fill="none" stroke={item.color} strokeWidth="3"
+                          strokeDasharray={`${item.pct} ${100 - item.pct}`} strokeDashoffset={offset} strokeLinecap="round" />,
                     nextOffset: offset - item.pct,
                   });
                   return acc;
@@ -268,49 +275,45 @@ export default function DashboardOverview() {
               </svg>
             </div>
             <div className={styles.distLegend}>
-              {statusDist.length === 0 ? (
-                <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>No data</span>
-              ) : (
-                statusDist.map((item: any, i: number) => (
+              {statusDist.length === 0
+                ? <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>No data</span>
+                : statusDist.map((item: any, i: number) => (
                   <div key={i} className={styles.legendRow}>
                     <span className={styles.legendDot} style={{ background: item.color }} />
-                    <span>{item.label}</span><span className={styles.legendVal}>{item.pct}%</span>
+                    <span>{item.label}</span>
+                    <span className={styles.legendVal}>{item.pct}%</span>
                   </div>
-                ))
-              )}
+                ))}
             </div>
           </div>
         </div>
 
-        {/* Active Alerts */}
+        {/* Active Alerts — linked to incidents in DB */}
         <div className={`${styles.alertsCard} card`}>
           <div className={styles.alertsHeader}>
             <h3 className={styles.cardTitle}>Active Alerts</h3>
             <span className={styles.alertCount}>{alerts.length}</span>
           </div>
           <div className={styles.alertsList}>
-            {alerts.length === 0 && !loading && (
+            {alerts.length === 0 && (
               <div className={styles.empty}>No active alerts</div>
             )}
-            {alerts.map((alert, i) => (
-              <div
-                key={i}
-                className={`${styles.alertItem} ${
-                  alert.level === 'critical' ? styles.alertCritical :
-                  alert.level === 'warning' ? styles.alertWarning : styles.alertInfo
-                }`}
-              >
+            {alerts.map((alert: any, i: number) => (
+              <div key={i} className={`${styles.alertItem} ${
+                alert.level === 'critical' ? styles.alertCritical :
+                alert.level === 'warning'  ? styles.alertWarning : styles.alertInfo
+              }`}>
                 <div className={styles.alertTop}>
                   <span className={styles.alertLevel}>
-                    {alert.level?.toUpperCase()} - ZN-{String(alert.id || i).padStart(2, '0')}
+                    {alert.level?.toUpperCase()} · {alert.incident_id ?? `#${i + 1}`}
                   </span>
                   <span className={styles.alertTime}>
-                    {alert.created_at ? new Date(alert.created_at).toLocaleTimeString() : 'now'}
+                    {alert.created_at ? new Date(alert.created_at).toLocaleTimeString() : 'live'}
                   </span>
                 </div>
                 <p className={styles.alertMsg}>{alert.message}</p>
                 <div className={styles.alertActions}>
-                  <Link href="/incidents" className={styles.alertBtn}>View Details</Link>
+                  <Link href="/incidents" className={styles.alertBtn}>View Incident</Link>
                   <button className={styles.alertBtnPrimary} onClick={() => handleAcknowledge(alert.id)}>
                     Acknowledge
                   </button>
@@ -321,93 +324,124 @@ export default function DashboardOverview() {
         </div>
       </div>
 
-      {/* Live Anomaly Log Feed */}
+      {/* Predictions Viewer */}
+      <PredictionsViewer predictions={recentPredictions} />
+
+      {/* Multi-Service Live Log Feed */}
       <div className={`${styles.tableSection} card`} style={{ marginBottom: '1rem' }}>
         <div className={styles.tableHeader}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1 }}>
             <Activity size={14} style={{ color: 'var(--accent-blue)' }} />
-            <h3 className={styles.cardTitle} style={{ margin: 0 }}>Anomaly Detector — Live Feed</h3>
-            <span style={{
-              fontSize: 10, fontWeight: 600, letterSpacing: '0.08em',
-              color: 'var(--success)', background: 'rgba(16,185,129,0.1)',
-              padding: '2px 6px', borderRadius: 4, marginLeft: 4
-            }}>LIVE</span>
+            <h3 className={styles.cardTitle} style={{ margin: 0 }}>Live Service Logs</h3>
+            <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--success)', background: 'rgba(16,185,129,0.1)', padding: '2px 6px', borderRadius: 4 }}>SSE LIVE</span>
+            {/* Service toggle chips */}
+            <div style={{ display: 'flex', gap: '0.25rem', marginLeft: '0.5rem' }}>
+              {Object.keys(SVC_COLORS).map((svc) => (
+                <button
+                  key={svc}
+                  onClick={() => toggleService(svc)}
+                  style={{
+                    fontSize: 9, padding: '2px 6px', borderRadius: 4, cursor: 'pointer',
+                    border: `1px solid ${SVC_COLORS[svc]}`,
+                    background: activeServices.has(svc) ? SVC_COLORS[svc] + '33' : 'transparent',
+                    color: SVC_COLORS[svc], fontWeight: 600, letterSpacing: '0.04em',
+                  }}
+                >
+                  {SVC_LABELS[svc]}
+                </button>
+              ))}
+            </div>
           </div>
           <Link href="/system-health" className={styles.viewAllLink}>
-            Full Log Explorer <ChevronRight size={14} />
+            Full Explorer <ChevronRight size={14} />
           </Link>
         </div>
         <div
           ref={logRef}
           style={{
             fontFamily: "'IBM Plex Mono', monospace",
-            fontSize: 11,
-            lineHeight: 1.7,
-            background: '#060d18',
-            borderRadius: 6,
-            padding: '10px 12px',
-            maxHeight: 220,
-            overflowY: 'auto',
+            fontSize: 11, lineHeight: 1.7,
+            background: '#060d18', borderRadius: 6,
+            padding: '10px 12px', maxHeight: 240, overflowY: 'auto',
             border: '1px solid var(--border-primary)',
           }}
         >
           {logLines.length === 0 ? (
-            <span style={{ color: 'var(--text-muted)' }}>Loading anomaly detector logs…</span>
+            <span style={{ color: 'var(--text-muted)' }}>Connecting to log stream…</span>
           ) : (
             logLines.map((line, i) => (
-              <div key={i} style={{
-                color: line.isAnomaly
-                  ? 'var(--warning)'
-                  : line.level === 'ERROR'
-                  ? 'var(--danger, #ef4444)'
-                  : 'var(--text-secondary)',
-                display: 'flex', gap: '0.75rem', alignItems: 'baseline',
-              }}>
-                {line.isAnomaly && <AlertTriangle size={10} style={{ flexShrink: 0, marginTop: 3, color: 'var(--warning)' }} />}
-                <span style={{ color: 'var(--text-muted)', flexShrink: 0, minWidth: 130 }}>
-                  {line.timestamp.split(' ')[1] || line.timestamp}
+              <div key={i} style={{ display: 'flex', gap: '0.5rem', alignItems: 'baseline' }}>
+                <span style={{
+                  fontSize: 8, fontWeight: 700, letterSpacing: '0.06em', flexShrink: 0,
+                  padding: '1px 4px', borderRadius: 3, width: 44, textAlign: 'center',
+                  background: SVC_COLORS[line.service] + '22', color: SVC_COLORS[line.service],
+                }}>
+                  {SVC_LABELS[line.service] ?? line.service.slice(0, 6).toUpperCase()}
                 </span>
-                <span>{line.message}</span>
+                {line.isAnomaly && <AlertTriangle size={10} style={{ color: '#f59e0b', flexShrink: 0 }} />}
+                <span style={{ color: '#4a5568', flexShrink: 0, minWidth: 65 }}>{line.timestamp}</span>
+                <span style={{
+                  color: line.isAnomaly ? '#f59e0b' : line.level === 'ERROR' ? '#ef4444' : '#94a3b8',
+                  flexShrink: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
+                  {line.message}
+                </span>
               </div>
             ))
           )}
         </div>
       </div>
 
-      {/* Pipeline Overview Section */}
+      {/* Pipeline Overview */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-        {/* DAG Flow Visualization */}
+        {/* DAG Flow */}
         <div className="card" style={{ padding: '1.25rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
             <GitBranch size={16} style={{ color: 'var(--accent-blue)' }} />
-            <h3 className={styles.cardTitle} style={{ margin: 0 }}>Detection Pipeline (DAG Flow)</h3>
+            <h3 className={styles.cardTitle} style={{ margin: 0 }}>Detection Pipeline</h3>
           </div>
           {dagFlow ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              {dagFlow.tasks.map((task: any, idx: number) => (
-                <div key={task.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <div style={{
-                    width: 24, height: 24, borderRadius: '50%',
-                    background: 'var(--accent-blue)',
-                    color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 10, fontWeight: 700, flexShrink: 0,
-                  }}>{idx + 1}</div>
-                  <div style={{
-                    flex: 1, padding: '0.4rem 0.75rem',
-                    background: 'var(--bg-tertiary)',
-                    borderRadius: 6, border: '1px solid var(--border-primary)',
-                  }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{task.label}</div>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>{task.description}</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+              {dagFlow.tasks.map((task: any, idx: number) => {
+                const taskState = activeRun?.tasks?.[task.id];
+                const isRunning = taskState === 'running';
+                const isSuccess = taskState === 'success';
+                const isFailed = taskState === 'failed';
+                
+                const dotColor = isRunning ? '#3b82f6' : isSuccess ? '#10b981' : isFailed ? '#ef4444' : 'var(--accent-blue)';
+                const bgColor = isRunning ? 'rgba(59, 130, 246, 0.1)' : isSuccess ? 'rgba(16, 185, 129, 0.1)' : isFailed ? 'rgba(239, 68, 68, 0.1)' : 'var(--bg-tertiary)';
+                const borderColor = isRunning ? '#3b82f6' : isSuccess ? '#10b981' : isFailed ? '#ef4444' : 'var(--border-primary)';
+
+                return (
+                  <div key={task.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
+                    <div style={{
+                      width: 22, height: 22, borderRadius: '50%', background: dotColor,
+                      color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 9, fontWeight: 700, flexShrink: 0, marginTop: 2,
+                      boxShadow: isRunning ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none',
+                    }}>{idx + 1}</div>
+                    <div style={{
+                      flex: 1, padding: '0.35rem 0.6rem',
+                      background: bgColor, borderRadius: 5,
+                      border: `1px solid ${borderColor}`,
+                      transition: 'all 0.3s ease',
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)' }}>{task.label}</div>
+                        {taskState && (
+                          <span style={{ fontSize: 8, fontWeight: 700, textTransform: 'uppercase', color: dotColor }}>
+                            {taskState}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>{task.description}</div>
+                    </div>
                   </div>
-                  {idx < dagFlow.tasks.length - 1 && (
-                    <div style={{ position: 'absolute', left: 11, marginTop: 28, width: 2, height: 8, background: 'var(--border-primary)' }} />
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
-            <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>Loading pipeline…</span>
+            <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>Loading…</span>
           )}
         </div>
 
@@ -420,26 +454,23 @@ export default function DashboardOverview() {
               <h3 className={styles.cardTitle} style={{ margin: 0 }}>Anomaly Summary</h3>
             </div>
             {anomalyStats ? (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                <div style={{ background: 'var(--bg-tertiary)', padding: '0.75rem', borderRadius: 8, textAlign: 'center' }}>
-                  <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--warning)' }}>{anomalyStats.total_anomalies}</div>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>Total Anomalies</div>
-                </div>
-                <div style={{ background: 'var(--bg-tertiary)', padding: '0.75rem', borderRadius: 8, textAlign: 'center' }}>
-                  <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--accent-blue)' }}>{anomalyStats.unique_vessels}</div>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>Unique Vessels</div>
-                </div>
-                <div style={{ background: 'var(--bg-tertiary)', padding: '0.75rem', borderRadius: 8, textAlign: 'center' }}>
-                  <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--success)' }}>{anomalyStats.avg_anomaly_score}</div>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>Avg Score</div>
-                </div>
-                <div style={{ background: 'var(--bg-tertiary)', padding: '0.75rem', borderRadius: 8, textAlign: 'center' }}>
-                  <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-primary)' }}>{anomalyStats.total_log_lines}</div>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>Log Lines</div>
-                </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                {[
+                  { label: 'Total Anomalies', value: anomalyStats.total_anomalies, color: '#f59e0b' },
+                  { label: 'Unique Vessels',  value: anomalyStats.unique_vessels,  color: '#3b82f6' },
+                  { label: 'Avg Score',       value: anomalyStats.avg_anomaly_score, color: '#22c55e' },
+                  { label: 'Log Lines',       value: anomalyStats.total_log_lines, color: '#94a3b8' },
+                ].map((item) => (
+                  <div key={item.label} style={{ background: 'var(--bg-tertiary)', padding: '0.6rem', borderRadius: 6, textAlign: 'center' }}>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: item.color }}>{item.value}</div>
+                    <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 2 }}>{item.label}</div>
+                  </div>
+                ))}
               </div>
+            ) : isAnomalyError ? (
+              <span style={{ color: 'var(--danger)', fontSize: 12 }}>Unable to load anomaly summary</span>
             ) : (
-              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>Loading stats…</span>
+              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>Loading…</span>
             )}
           </div>
 
@@ -449,28 +480,35 @@ export default function DashboardOverview() {
               <Satellite size={16} style={{ color: 'var(--success)' }} />
               <h3 className={styles.cardTitle} style={{ margin: 0 }}>SAR Imagery ({sarImages.length})</h3>
             </div>
-            {sarImages.length === 0 ? (
-              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>No SAR images available</span>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
-                {sarImages.filter((img: any) => img.type === 'preprocessed').slice(0, 3).map((img: any, i: number) => (
-                  <div key={i} style={{
-                    borderRadius: 6, overflow: 'hidden',
-                    border: '1px solid var(--border-primary)',
-                    background: 'var(--bg-tertiary)',
-                  }}>
-                    <img
-                      src={getSarImageUrl(img.filename)}
-                      alt={img.granule_id}
-                      style={{ width: '100%', height: 80, objectFit: 'cover' }}
-                    />
-                    <div style={{ padding: '0.35rem 0.5rem', fontSize: 9, color: 'var(--text-muted)', wordBreak: 'break-all' }}>
-                      {img.granule_id.split('_').slice(-3, -1).join(' ')}
-                    </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.4rem' }}>
+              {sarImages.filter((img: any) => img.type === 'preprocessed').slice(0, 3).map((img: any, i: number) => (
+                <div key={i} style={{ borderRadius: 5, overflow: 'hidden', border: '1px solid var(--border-primary)' }}>
+                  <img src={getSarImageUrl(img.filename)} alt={img.granule_id}
+                    style={{ width: '100%', height: 72, objectFit: 'cover' }} />
+                  <div style={{ padding: '0.25rem 0.4rem', fontSize: 8, color: 'var(--text-muted)' }}>
+                    {img.granule_id.split('_').slice(-3, -1).join(' ')}
                   </div>
-                ))}
-              </div>
-            )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: '1.25rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+              <Satellite size={16} style={{ color: 'var(--accent-purple)' }} />
+              <h3 className={styles.cardTitle} style={{ margin: 0 }}>Prediction Outputs ({predictionFiles.length})</h3>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.4rem' }}>
+              {predictionFiles.slice(0, 3).map((img: any, i: number) => (
+                <div key={i} style={{ borderRadius: 5, overflow: 'hidden', border: '1px solid var(--border-primary)' }}>
+                  <img src={getPredictionImageUrl(img.filename)} alt={img.filename}
+                    style={{ width: '100%', height: 72, objectFit: 'cover' }} />
+                  <div style={{ padding: '0.25rem 0.4rem', fontSize: 8, color: 'var(--text-muted)' }}>
+                    {img.source_image ? `source: ${img.source_image}` : img.filename}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -483,51 +521,34 @@ export default function DashboardOverview() {
         </div>
         <table className={styles.table}>
           <thead>
-            <tr>
-              <th>ID</th>
-              <th>Confidence</th>
-              <th>Location</th>
-              <th>Detected</th>
-              <th>Status</th>
-            </tr>
+            <tr><th>ID</th><th>Confidence</th><th>Location</th><th>Detected</th><th>Status</th></tr>
           </thead>
           <tbody>
-            {loading && (
-              <tr><td colSpan={5} className={styles.empty}>Loading…</td></tr>
-            )}
-            {!loading && incidents.length === 0 && (
+            {!overview && <tr><td colSpan={5} className={styles.empty}>Loading…</td></tr>}
+            {overview?.recent_incidents?.length === 0 && (
               <tr><td colSpan={5} className={styles.empty}>No incidents</td></tr>
             )}
-            {incidents.slice(0, 5).map((inc) => (
+            {(overview?.recent_incidents ?? []).slice(0, 5).map((inc: any) => (
               <tr key={inc.id}>
                 <td className={styles.incId}>{inc.id}</td>
                 <td>
                   <div className={styles.confCell}>
                     <div className={styles.confBar}>
-                      <div
-                        className={styles.confFill}
-                        style={{
-                          width: `${(inc.confidence_score || 0) * 100}%`,
-                          background:
-                            inc.confidence_score > 0.8 ? 'var(--success)' :
-                            inc.confidence_score > 0.6 ? 'var(--warning)' : 'var(--text-dim)',
-                        }}
-                      />
+                      <div className={styles.confFill} style={{
+                        width: `${(inc.confidence_score || 0) * 100}%`,
+                        background: inc.confidence_score > 0.8 ? 'var(--success)' : inc.confidence_score > 0.6 ? 'var(--warning)' : 'var(--text-dim)',
+                      }} />
                     </div>
                     <span className={styles.confVal}>{inc.confidence_score?.toFixed(2) ?? '--'}</span>
                   </div>
                 </td>
-                <td className="mono" style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
+                <td style={{ color: 'var(--text-secondary)', fontSize: 12, fontFamily: 'monospace' }}>
                   {inc.latitude?.toFixed(1)}°N, {inc.longitude?.toFixed(1)}°E
                 </td>
                 <td style={{ color: 'var(--text-muted)', fontSize: 13 }}>
                   {inc.detection_time ? new Date(inc.detection_time).toLocaleString() : '--'}
                 </td>
-                <td>
-                  <span className={`status-badge ${inc.status?.toLowerCase().replace(' ', '_')}`}>
-                    {inc.status}
-                  </span>
-                </td>
+                <td><span className={`status-badge ${inc.status?.toLowerCase().replace(' ', '_')}`}>{inc.status}</span></td>
               </tr>
             ))}
           </tbody>

@@ -3,3 +3,4 @@ from app.models.incident import Incident, DagRun, TaskInstance, Metric, SystemSt
 from app.models.alerts import Alert
 from app.models.users import User
 from app.models.logs import LogEntry
+from app.models.predictions import Prediction

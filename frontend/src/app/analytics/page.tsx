@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import styles from './analytics.module.css';
+import { API_BASE } from '@/lib/api';
 
 export default function Analytics() {
   const [statsBreakdown, setStatsBreakdown] = useState<Record<string, number>>({});
@@ -11,10 +12,9 @@ export default function Analytics() {
   useEffect(() => {
     async function load() {
       try {
-        const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
         const [statusRes, geoRes] = await Promise.all([
-          fetch(`${base}/incidents/stats/status-breakdown`),
-          fetch(`${base}/incidents/stats/geographic-distribution`),
+          fetch(`${API_BASE}/incidents/stats/status-breakdown`),
+          fetch(`${API_BASE}/incidents/stats/geographic-distribution`),
         ]);
         if (statusRes.ok) setStatsBreakdown(await statusRes.json());
         if (geoRes.ok) setGeoData(await geoRes.json());

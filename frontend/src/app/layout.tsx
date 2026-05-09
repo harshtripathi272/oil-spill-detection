@@ -3,6 +3,7 @@ import './globals.css';
 import styles from './layout.module.css';
 import Sidebar from '../components/Sidebar';
 import Header from '../components/Header';
+import { ReactQueryProvider } from '../lib/QueryProvider';
 
 export const metadata: Metadata = {
   title: 'VesselWatch',
@@ -22,15 +23,17 @@ export default function RootLayout({
         <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
       </head>
       <body suppressHydrationWarning>
-        <div className={styles.appContainer}>
-          <Sidebar />
-          <div className={styles.mainWrapper}>
-            <Header />
-            <main className={styles.mainContent}>
-              {children}
-            </main>
+        <ReactQueryProvider>
+          <div className={styles.appContainer}>
+            <Sidebar />
+            <div className={styles.mainWrapper}>
+              <Header />
+              <main className={styles.mainContent}>
+                {children}
+              </main>
+            </div>
           </div>
-        </div>
+        </ReactQueryProvider>
       </body>
     </html>
   );

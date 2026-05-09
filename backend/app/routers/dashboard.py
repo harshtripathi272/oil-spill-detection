@@ -7,28 +7,35 @@ from app.schemas.dashboard import (
     DashboardResponse, DashboardStats, ChartData,
     Incident, DagRun, Metric
 )
+from app.cache import cache_get, cache_set
 
 router = APIRouter()
 
 @router.get("/stats", response_model=DashboardStats)
 async def get_dashboard_stats(db: Session = Depends(get_db)):
-    """Get overall dashboard statistics"""
+    """Get overall dashboard statistics — cached 30 s"""
+    cached = cache_get("dashboard:stats")
+    if cached:
+        return DashboardStats(**cached)
     service = DashboardService(db)
-    return service.get_dashboard_stats()
+    result = service.get_dashboard_stats()
+    cache_set("dashboard:stats", result.model_dump(), ttl=30)
+    return result
 
 @router.get("/overview", response_model=DashboardResponse)
 async def get_dashboard_overview(db: Session = Depends(get_db)):
-    """Get complete dashboard overview with stats and charts"""
+    """Get complete dashboard overview — cached 60 s"""
+    cached = cache_get("dashboard:overview")
+    if cached:
+        return cached
     service = DashboardService(db)
-
     stats = service.get_dashboard_stats()
     recent_incidents = service.get_recent_incidents()
     processing_times = service.get_processing_times_chart()
     incidents_over_time = service.get_incidents_over_time()
     status_distribution = service.get_status_distribution()
     model_performance = service.get_model_performance()
-
-    return DashboardResponse(
+    response = DashboardResponse(
         stats=stats,
         recent_incidents=recent_incidents,
         processing_times_chart=processing_times,
@@ -36,12 +43,20 @@ async def get_dashboard_overview(db: Session = Depends(get_db)):
         status_distribution=status_distribution,
         model_performance=model_performance
     )
+    cache_set("dashboard:overview", response.model_dump(), ttl=60)
+    return response
 
 @router.get("/charts/incidents-over-time", response_model=ChartData)
 async def get_incidents_over_time(days: int = 30, db: Session = Depends(get_db)):
-    """Get incidents over time chart data"""
+    """Get incidents over time chart data — cached 5 min"""
+    key = f"dashboard:chart:incidents-over-time:{days}"
+    cached = cache_get(key)
+    if cached:
+        return cached
     service = DashboardService(db)
-    return service.get_incidents_over_time(days)
+    result = service.get_incidents_over_time(days)
+    cache_set(key, result.model_dump(), ttl=300)
+    return result
 
 @router.get("/charts/processing-times", response_model=ChartData)
 async def get_processing_times_chart(days: int = 30, db: Session = Depends(get_db)):

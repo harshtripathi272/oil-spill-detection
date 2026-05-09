@@ -1,7 +1,7 @@
 """
 Pipeline visibility endpoints.
-Serves DAG structure, SAR images, YOLO model results, and anomaly stats
-from files on disk — no database required.
+Serves DAG structure, SAR images, YOLO model results, anomaly stats,
+and a confidence-score histogram — all from files on disk, no DB required.
 """
 
 import csv
@@ -9,14 +9,19 @@ import os
 import re
 from collections import Counter
 from datetime import datetime
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from sqlalchemy import desc
 from typing import List, Dict, Any
+from app.database import get_db
+from app.models.predictions import Prediction
 
 router = APIRouter()
 
 BASE_DIR = "/data/user13/oilspill_ugq/oil-spill-detection"
 LOGS_DIR = os.path.join(BASE_DIR, "logs")
 SAR_DIR = os.path.join(BASE_DIR, "sentinel_data", "preprocessed")
+PREDICTIONS_DIR = os.path.join(BASE_DIR, "sentinel_data", "predictions")
 YOLO_RESULTS = os.path.join(
     BASE_DIR, "runs", "yolo", "yolo26n-bbox-1024-merged", "results.csv"
 )
@@ -76,10 +81,14 @@ async def get_dag_flow():
 
 
 @router.get("/sar-images")
-async def get_sar_images():
+async def get_sar_images(db: Session = Depends(get_db)):
     """List available preprocessed SAR images."""
     if not os.path.isdir(SAR_DIR):
         return {"images": []}
+
+    prediction_lookup = {}
+    for pred in db.query(Prediction).filter(Prediction.image_path.isnot(None)).all():
+        prediction_lookup[os.path.basename(pred.image_path)] = pred
 
     images: List[Dict[str, Any]] = []
     for fname in sorted(os.listdir(SAR_DIR)):
@@ -90,16 +99,60 @@ async def get_sar_images():
         # Parse granule ID and type from filename
         is_preprocessed = "_preprocessed" in fname
         granule_id = fname.replace("_preprocessed.png", "").replace("_raw.png", "")
-        images.append(
-            {
-                "filename": fname,
-                "granule_id": granule_id,
-                "type": "preprocessed" if is_preprocessed else "raw",
-                "size": stat.st_size,
-                "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                "url": f"/sar-images/{fname}",
-            }
-        )
+        item = {
+            "filename": fname,
+            "granule_id": granule_id,
+            "type": "preprocessed" if is_preprocessed else "raw",
+            "size": stat.st_size,
+            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            "url": f"/sar-images/{fname}",
+        }
+        matched_prediction = prediction_lookup.get(fname)
+        if matched_prediction:
+            item.update({
+                "prediction_id": matched_prediction.id,
+                "prediction": matched_prediction.prediction,
+                "confidence": matched_prediction.confidence,
+                "prediction_url": f"/api/v1/predictions/{matched_prediction.id}/image",
+            })
+        images.append(item)
+    return {"images": images, "total": len(images)}
+
+
+@router.get("/prediction-files")
+async def get_prediction_files(limit: int = 50, db: Session = Depends(get_db)):
+    """List available prediction output images and their connected SAR source if available."""
+    if not os.path.isdir(PREDICTIONS_DIR):
+        return {"images": []}
+
+    prediction_lookup = {}
+    for pred in db.query(Prediction).filter(Prediction.prediction_image_path.isnot(None)).all():
+        prediction_lookup[os.path.basename(pred.prediction_image_path)] = pred
+
+    images: List[Dict[str, Any]] = []
+    for fname in sorted(os.listdir(PREDICTIONS_DIR)):
+        if not fname.lower().endswith((".jpg", ".jpeg", ".png")):
+            continue
+        filepath = os.path.join(PREDICTIONS_DIR, fname)
+        stat = os.stat(filepath)
+        item = {
+            "filename": fname,
+            "size": stat.st_size,
+            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            "url": f"/prediction-images/{fname}",
+        }
+        matched_prediction = prediction_lookup.get(fname)
+        if matched_prediction:
+            item.update({
+                "prediction_id": matched_prediction.id,
+                "prediction": matched_prediction.prediction,
+                "confidence": matched_prediction.confidence,
+                "incident_id": matched_prediction.incident_id,
+                "source_image": os.path.basename(matched_prediction.image_path),
+            })
+        images.append(item)
+        if len(images) >= limit:
+            break
     return {"images": images, "total": len(images)}
 
 
@@ -193,3 +246,67 @@ async def get_anomaly_stats():
         "top_vessels": [{"vessel_id": v, "count": c} for v, c in top_vessels],
         "recent_anomalies": recent_anomalies[-20:],  # last 20
     }
+
+
+@router.get("/confidence-histogram")
+async def get_confidence_histogram():
+    """
+    Returns a histogram of anomaly scores from the detector log,
+    bucketed into 0.1-wide bins (0.6-0.7, 0.7-0.8, 0.8-0.9, 0.9-1.0).
+    Used as the 'Incident Trends' replacement chart on the dashboard.
+    """
+    log_path = os.path.join(LOGS_DIR, "anomaly_detector.log")
+    if not os.path.isfile(log_path):
+        return {"labels": [], "counts": [], "total": 0}
+
+    score_pattern = re.compile(r"Score: ([\d.]+)")
+    bins = {"0.60-0.70": 0, "0.70-0.80": 0, "0.80-0.90": 0, "0.90-1.00": 0}
+
+    total = 0
+    with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+        for line in f:
+            m = score_pattern.search(line)
+            if m:
+                score = float(m.group(1))
+                total += 1
+                if score < 0.70:
+                    bins["0.60-0.70"] += 1
+                elif score < 0.80:
+                    bins["0.70-0.80"] += 1
+                elif score < 0.90:
+                    bins["0.80-0.90"] += 1
+                else:
+                    bins["0.90-1.00"] += 1
+
+    return {
+        "labels": list(bins.keys()),
+        "counts": list(bins.values()),
+        "total": total,
+    }
+
+
+@router.get("/active-runs")
+async def get_active_runs(db: Session = Depends(get_db)):
+    """Fetch active DAG runs and their task statuses."""
+    from app.models.incident import DagRun, TaskInstance
+
+    # Get recent dag runs for the suspicious event validation
+    runs = db.query(DagRun).filter(
+        DagRun.dag_id == "suspicious_event_validation"
+    ).order_by(desc(DagRun.id)).limit(1).all()
+
+    result = []
+    for run in runs:
+        # Get task instances for this run
+        tasks = db.query(TaskInstance).filter(TaskInstance.dag_run_id == run.id).all()
+        task_states = {t.task_id: t.state for t in tasks}
+
+        result.append({
+            "id": run.id,
+            "dag_id": run.dag_id,
+            "run_id": run.run_id,
+            "status": run.state,
+            "incident_id": run.incident_id,
+            "tasks": task_states
+        })
+    return result

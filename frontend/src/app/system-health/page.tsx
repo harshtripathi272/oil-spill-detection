@@ -6,7 +6,8 @@ import {
   Activity, Zap, Clock, Download, RefreshCw 
 } from 'lucide-react';
 import styles from './system-health.module.css';
-import { fetchSystemHealth, fetchSystemResources, fetchServicesLive, fetchLogFileContent } from '@/lib/api';
+import { API_BASE, fetchSystemHealth, fetchSystemResources, fetchServicesLive, fetchLogFileContent } from '@/lib/api';
+import { formatBytes, formatUptime } from '@/lib/utils';
 
 export default function SystemTelemetry() {
   const [health, setHealth] = useState<any>(null);
@@ -48,18 +49,6 @@ export default function SystemTelemetry() {
   const netSent = resources?.network?.bytes_sent ?? 0;
   const netRecv = resources?.network?.bytes_recv ?? 0;
 
-  const formatBytes = (b: number) => {
-    if (b === 0) return '0 B';
-    const i = Math.floor(Math.log(b) / Math.log(1024));
-    return (b / Math.pow(1024, i)).toFixed(1) + ' ' + ['B', 'KB', 'MB', 'GB', 'TB'][i];
-  };
-
-  const formatUptime = (seconds: number) => {
-    const days = Math.floor(seconds / 86400);
-    const hours = Math.floor((seconds % 86400) / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    return `${days}d ${hours}h ${minutes}m`;
-  };
 
   const healthyCount = health?.components?.filter((c: any) => c.status === 'healthy').length ?? 0;
   const totalCount = health?.components?.length ?? 0;
@@ -80,7 +69,6 @@ export default function SystemTelemetry() {
   };
 
   const handleDownloadLogs = () => {
-    const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
     window.open(`${API_BASE}/logs/download/anomaly_detector.log`, '_blank');
   };
 

@@ -8,6 +8,7 @@ Usage:
 Outputs JSON to stdout with keys:
     - prediction: "oil_spill" or "no_oil_spill"
     - confidence: float confidence score
+    - bbox_coordinates: dict with x1, y1, x2, y2
 """
 
 import argparse
@@ -24,8 +25,6 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from training.unet.model import build_unet
-
 
 def yolo_inference(image_path: str, model_path: str, conf: float = 0.5, imgsz: int = 640, task: str = "detect"):
     """Run YOLO inference on single image."""
@@ -36,12 +35,13 @@ def yolo_inference(image_path: str, model_path: str, conf: float = 0.5, imgsz: i
             f"Current preprocessing pipeline expects RTC-like inputs. File: {filename}"
         )
 
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     model = YOLO(model_path)
     result = model.predict(
         source=image_path,
         imgsz=imgsz,
         conf=conf,
-        device="0",
+        device=device,
         verbose=False
     )[0]
 
@@ -51,21 +51,39 @@ def yolo_inference(image_path: str, model_path: str, conf: float = 0.5, imgsz: i
     else:  # detect (bbox)
         has_detection = result.boxes is not None and len(result.boxes) > 0
 
-    # Get confidence from boxes (works for both detect and segment tasks)
+    # Get confidence and bounding box from the top detection
     confidence = 0.0
-    if result.boxes is not None and hasattr(result.boxes, 'conf') and len(result.boxes.conf) > 0:
-        confidence = float(result.boxes.conf[0])
+    bbox_coords = None
+    
+    if result.boxes is not None and len(result.boxes) > 0:
+        # Get the first detection (highest confidence usually)
+        box = result.boxes[0]
+        if hasattr(box, 'conf') and len(box.conf) > 0:
+            confidence = float(box.conf[0])
+        
+        # Extract bbox coordinates
+        if hasattr(box, 'xyxy') and len(box.xyxy) > 0:
+            coords = box.xyxy[0].cpu().numpy()
+            bbox_coords = {
+                "x1": float(coords[0]),
+                "y1": float(coords[1]),
+                "x2": float(coords[2]),
+                "y2": float(coords[3])
+            }
 
     return {
         "prediction": "oil_spill" if has_detection and confidence > conf else "no_oil_spill",
         "confidence": confidence,
         "model_type": f"yolo_{task}",
         "detections": len(result.boxes) if result.boxes else 0,
+        "bbox_coordinates": bbox_coords
     }
 
 
 def unet_inference(image_path: str, model_path: str, threshold: float = 0.5, image_size: int = 512):
     """Run UNet inference on single image."""
+    from training.unet.model import build_unet
+    
     # Load checkpoint
     ckpt = torch.load(model_path, map_location="cpu")
     encoder = ckpt.get("encoder", "efficientnet-b0")

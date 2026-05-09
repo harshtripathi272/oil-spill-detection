@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timedelta
+import asyncio
+import json
 import os
 import glob
 from app.database import get_db
@@ -12,6 +14,83 @@ from app.schemas.logs import LogEntry as LogEntrySchema, LogEntryCreate
 router = APIRouter()
 
 LOGS_DIR = "/data/user13/oilspill_ugq/oil-spill-detection/logs"
+
+# Services we stream live logs for
+KNOWN_SERVICES = {
+    "anomaly_detector": "anomaly_detector.log",
+    "ingestion":        "ingestion.log",
+    "stream_processor": "stream_processor.log",
+    "trigger_bridge":   "trigger_bridge.log",
+}
+
+@router.get("/stream")
+async def stream_logs(
+    services: str = Query(
+        "anomaly_detector,ingestion,stream_processor,trigger_bridge",
+        description="Comma-separated list of service names to stream"
+    ),
+    tail: int = Query(20, description="Lines to send on connect (per service)"),
+):
+    """
+    SSE endpoint that streams new log lines from one or more service log files.
+    Connect once — the server pushes new lines as they appear.
+    Format:  data: {"service":"…","line":"…","ts":"…"}\\n\\n
+    """
+    svc_list = [s.strip() for s in services.split(",") if s.strip() in KNOWN_SERVICES]
+    if not svc_list:
+        svc_list = list(KNOWN_SERVICES.keys())
+
+    async def event_generator():
+        # Track byte offsets per file so we only send new content
+        file_positions: dict[str, int] = {}
+
+        for svc in svc_list:
+            path = os.path.join(LOGS_DIR, KNOWN_SERVICES[svc])
+            if not os.path.exists(path):
+                continue
+            # Send `tail` most recent lines immediately on connect
+            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                all_lines = f.readlines()
+                recent = all_lines[-tail:]
+                file_positions[svc] = f.tell()
+            for line in recent:
+                line = line.rstrip()
+                if line:
+                    ts = line[:19] if len(line) > 19 else ""
+                    payload = json.dumps({"service": svc, "line": line, "ts": ts})
+                    yield f"data: {payload}\n\n"
+
+        # Then tail new lines in a loop
+        while True:
+            for svc in svc_list:
+                path = os.path.join(LOGS_DIR, KNOWN_SERVICES[svc])
+                if not os.path.exists(path):
+                    continue
+                try:
+                    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                        f.seek(file_positions.get(svc, 0))
+                        new_lines = f.readlines()
+                        file_positions[svc] = f.tell()
+                    for line in new_lines:
+                        line = line.rstrip()
+                        if line:
+                            ts = line[:19] if len(line) > 19 else ""
+                            payload = json.dumps({"service": svc, "line": line, "ts": ts})
+                            yield f"data: {payload}\n\n"
+                except Exception:
+                    pass
+            await asyncio.sleep(2)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 
 @router.get("/files", response_model=List[dict])
 def get_log_files():
