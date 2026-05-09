@@ -112,6 +112,7 @@ export default function IncidentTable() {
                 key={s}
                 className={`${styles.chip} ${statusFilter === s ? styles.chipActive : ''}`}
                 onClick={() => setStatusFilter(s)}
+                suppressHydrationWarning
               >
                 {s === 'all' ? 'All' : `● ${s.charAt(0).toUpperCase() + s.slice(1)}`}
               </button>
