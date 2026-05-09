@@ -47,10 +47,15 @@ export default function Header() {
           <span className={styles.liveDot}></span>
           LIVE
         </div>
-        <button className={styles.iconBtn} title="WebSocket Status">
+        <button className={styles.iconBtn} title="WebSocket Status" suppressHydrationWarning>
           <Radio size={16} />
         </button>
-        <button className={styles.iconBtn} title="Refresh" onClick={() => window.location.reload()}>
+        <button
+          className={styles.iconBtn}
+          title="Refresh"
+          onClick={() => window.location.reload()}
+          suppressHydrationWarning
+        >
           <RefreshCw size={16} />
         </button>
         <Link href="/" className={styles.iconBtn} title="Notifications">
