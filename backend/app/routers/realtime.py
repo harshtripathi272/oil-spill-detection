@@ -1,5 +1,6 @@
 import asyncio
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
+from fastapi.encoders import jsonable_encoder
 from app.database import get_db
 from app.services.dashboard_service import DashboardService
 from app.services.system_service import build_system_health
@@ -73,13 +74,13 @@ async def websocket_updates(websocket: WebSocket):
                 ]
 
                 # Send ONLY to this connection to avoid N*N message explosion
-                await websocket.send_json({
+                await websocket.send_json(jsonable_encoder({
                     "type": "dashboard_update",
-                    "stats": stats.model_dump() if hasattr(stats, "model_dump") else stats,
-                    "system_health": health.model_dump() if hasattr(health, "model_dump") else health,
+                    "stats": stats,
+                    "system_health": health,
                     "alerts": alert_items,
                     "recent_predictions": prediction_items,
-                })
+                }))
             finally:
                 db.close()
                 

@@ -177,7 +177,8 @@ export default function PredictionsViewer({ maxImages = 6, refreshInterval = 300
                     }}
                     onError={(e) => {
                       e.currentTarget.style.display = 'none';
-                      e.currentTarget.nextElementSibling!.style.display = 'flex';
+                      const next = e.currentTarget.nextElementSibling as HTMLElement | null;
+                      if (next) next.style.display = 'flex';
                     }}
                   />
                 ) : null}

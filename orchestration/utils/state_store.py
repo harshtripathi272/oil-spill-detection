@@ -43,13 +43,23 @@ class StateStore:
         self.base_api = f"{self.supabase_url}/rest/v1/incidents"
         
         # Always initialize SQLite if needed as a fallback
-        # Use the same database as the backend: oilspill.db
-        self.db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../backend/oilspill.db"))
+        # Use the same database as the backend via DATABASE_URL
+        db_url = os.getenv("DATABASE_URL", "")
+        if db_url.startswith("sqlite:///"):
+            # Handle absolute or relative paths from sqlite:///
+            self.db_path = db_url.replace("sqlite:///", "")
+            # Ensure path is absolute if it was relative in the URL
+            if not os.path.isabs(self.db_path):
+                self.db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../", self.db_path))
+        else:
+            # Fallback to absolute path in project root
+            self.db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../oilspill.db"))
+            
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         self._init_sqlite()
 
         if not self.is_supabase_configured:
-            logger.info("Supabase not configured. Using unified SQLite store at %s", self.db_path)
+            logger.info("Using unified SQLite store at %s", self.db_path)
 
     def _init_sqlite(self):
         with sqlite3.connect(self.db_path) as conn:
