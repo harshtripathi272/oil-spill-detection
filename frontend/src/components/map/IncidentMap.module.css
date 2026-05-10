@@ -205,6 +205,80 @@
   margin-bottom: 0.4rem;
 }
 
+/* Lifecycle Stepper in Panel */
+.lifecycleStepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  padding: 0 10px;
+}
+
+.step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  flex: 1;
+}
+
+.stepDot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--bg-input);
+  border: 2px solid var(--border-active);
+  position: relative;
+  z-index: 2;
+  margin-bottom: 6px;
+}
+
+.stepLine {
+  position: absolute;
+  top: 5px;
+  left: calc(50% + 12px);
+  right: calc(-50% + 12px);
+  height: 2px;
+  background: var(--border-primary);
+  z-index: 1;
+}
+
+.stepLabel {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.stepComplete .stepDot {
+  background: var(--accent-blue);
+  border-color: var(--accent-blue);
+}
+.stepComplete .stepLine {
+  background: var(--accent-blue);
+}
+.stepComplete .stepLabel {
+  color: var(--text-primary);
+}
+
+.stepActive .stepDot {
+  background: var(--bg-card);
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+.stepActive .stepLabel {
+  color: var(--accent-blue);
+}
+
+.stepFailed .stepDot {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+.stepFailed .stepLabel {
+  color: var(--danger);
+}
+
 .img {
   width: 100%;
   max-height: 140px;

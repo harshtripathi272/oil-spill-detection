@@ -36,9 +36,9 @@ class DashboardService:
         if supabase.is_configured:
             incidents = self._load_supabase_incidents()
             total_incidents = len(incidents)
-            active_incidents = len([i for i in incidents if i['status'] in ['detected', 'confirmed', 'DETECTED', 'VERIFIED']])
+            active_incidents = len([i for i in incidents if i['status'] in ['detected', 'confirmed']])
             resolved_incidents = len([i for i in incidents if i['status'] in ['resolved']])
-            false_positives = len([i for i in incidents if i['status'] in ['false_positive', 'FALSE_POSITIVE']])
+            false_positives = len([i for i in incidents if i['status'] in ['false_positive']])
             confidence_values = [i['confidence_score'] for i in incidents if i.get('confidence_score') is not None]
             avg_confidence_score = round(sum(confidence_values) / len(confidence_values), 2) if confidence_values else 0.0
             processing_times = [i['processing_time'] for i in incidents if i.get('processing_time') is not None]

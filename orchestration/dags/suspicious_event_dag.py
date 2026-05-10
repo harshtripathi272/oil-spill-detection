@@ -22,7 +22,7 @@ load_dotenv(REPO_ROOT / '.env')
 from airflow import DAG
 from airflow.providers.standard.operators.python import PythonOperator
 from datetime import datetime, timedelta, timezone
-from orchestration.utils.state_store import StateStore, STATE_PROCESSING, STATE_VERIFIED, STATE_FAILED
+from orchestration.utils.state_store import StateStore, STATE_PROCESSING, STATE_DETECTED, STATE_FAILED
 from orchestration.utils.geometry import create_buffer_bbox, wkt_from_bbox
 from orchestration.operators.sentinel_search import SentinelSearchOperator
 from orchestration.operators.sentinel_download import SentinelDownloadOperator
@@ -142,7 +142,7 @@ def process_results(**context):
 
     has_spill = any(isinstance(r, dict) and r.get('prediction') == 'oil_spill' for r in results)
     if has_spill:
-        store.update_incident_state(incident_id, STATE_VERIFIED, metadata={"inference": results})
+        store.update_incident_state(incident_id, STATE_DETECTED, metadata={"inference": results})
     else:
         # If no oil spill detected or no images, technically not 'FAILED' but 'CLEARED' or 'NO_DATA'
         # For this logic we keep it simple.

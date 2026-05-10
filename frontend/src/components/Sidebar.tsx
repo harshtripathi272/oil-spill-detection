@@ -6,6 +6,9 @@ import {
   Globe,
   HeartPulse,
   HelpCircle,
+  Map,
+  Activity,
+  Ship,
 } from 'lucide-react';
 import styles from './Sidebar.module.css';
 
@@ -32,6 +35,27 @@ export default function Sidebar() {
         >
           <Globe size={16} />
           <span>Dashboard</span>
+        </Link>
+        <Link
+          href="/map"
+          className={`${styles.regionItem} ${pathname === '/map' ? styles.regionActive : ''}`}
+        >
+          <Map size={16} />
+          <span>Map</span>
+        </Link>
+        <Link
+          href="/analytics"
+          className={`${styles.regionItem} ${pathname === '/analytics' ? styles.regionActive : ''}`}
+        >
+          <Activity size={16} />
+          <span>Analytics</span>
+        </Link>
+        <Link
+          href="/vessels"
+          className={`${styles.regionItem} ${pathname === '/vessels' ? styles.regionActive : ''}`}
+        >
+          <Ship size={16} />
+          <span>Vessels</span>
         </Link>
       </nav>
 

@@ -32,22 +32,19 @@ function isResolvedStatus(status: string): boolean {
 }
 
 function isDetectedPulseStatus(status: string): boolean {
-  const u = status.trim().toUpperCase();
-  if (u === 'DETECTED') return true;
   return status.trim().toLowerCase() === 'detected';
 }
 
 /** In-progress / verified spill — visible but not the same as initial “detected” pulse */
 function isActiveNonDetectedStatus(status: string): boolean {
-  const u = status.trim().toUpperCase();
-  if (u === 'VERIFIED') return true;
   const l = status.trim().toLowerCase();
   return (
     l === 'confirmed' ||
     l === 'pending_imagery' ||
     l === 'imagery_available' ||
     l === 'downloading' ||
-    l === 'processing'
+    l === 'processing' ||
+    l === 'verified' // Support legacy just in case
   );
 }
 
@@ -217,10 +214,19 @@ function VesselBlock({ meta }: { meta: Record<string, unknown> | null | undefine
   const vesselId = meta.vessel_id ?? meta.vesselId;
   const mmsi = meta.mmsi ?? meta.MMSI;
   const name = meta.vessel_name ?? meta.name ?? meta.ship_name;
+  
+  const features = (meta.raw as any)?.features || {};
+  const modelMeta = (meta.model as any)?.metadata || {};
+
   const rows: { k: string; v: string }[] = [];
   if (vesselId != null) rows.push({ k: 'Vessel ID', v: String(vesselId) });
   if (mmsi != null) rows.push({ k: 'MMSI', v: String(mmsi) });
   if (name != null) rows.push({ k: 'Name', v: String(name) });
+  if (features.vessel_type) rows.push({ k: 'Type', v: String(features.vessel_type) });
+  if (features.speed_knots != null) rows.push({ k: 'Speed', v: `${Number(features.speed_knots).toFixed(1)} kn` });
+  if (features.heading_deg != null) rows.push({ k: 'Heading', v: `${Number(features.heading_deg).toFixed(1)}°` });
+  if (modelMeta.global_score != null) rows.push({ k: 'Risk Score', v: Number(modelMeta.global_score).toFixed(2) });
+
   if (!rows.length) {
     return (
       <pre style={{ fontSize: 11, color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', margin: 0 }}>
@@ -236,6 +242,39 @@ function VesselBlock({ meta }: { meta: Record<string, unknown> | null | undefine
           <span className={styles.vesselVal}>{r.v}</span>
         </div>
       ))}
+    </div>
+  );
+}
+
+function IncidentLifecycleTimeline({ status }: { status: string }) {
+  const steps = ['DETECTED', 'CONFIRMED', 'RESOLVED'];
+  let currentIdx = 0;
+  const s = status.toLowerCase();
+  if (s === 'detected') currentIdx = 0;
+  else if (s === 'confirmed' || s === 'processing' || s === 'downloading' || s === 'verified') currentIdx = 1;
+  else if (s === 'resolved') currentIdx = 2;
+  else if (s === 'false_positive' || s === 'failed') currentIdx = -1; // special state
+
+  return (
+    <div className={styles.lifecycleStepper}>
+      {steps.map((step, i) => {
+        let stateClass = styles.stepPending;
+        if (currentIdx === -1) {
+          stateClass = styles.stepFailed;
+        } else if (i < currentIdx) {
+          stateClass = styles.stepComplete;
+        } else if (i === currentIdx) {
+          stateClass = styles.stepActive;
+        }
+        
+        return (
+          <div key={step} className={`${styles.step} ${stateClass}`}>
+            <div className={styles.stepDot} />
+            <span className={styles.stepLabel}>{step}</span>
+            {i < steps.length - 1 && <div className={styles.stepLine} />}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -389,7 +428,7 @@ export default function IncidentMap() {
           <aside className={styles.panel}>
             <div className={styles.panelTopBar}>
               <span className={styles.panelId} title={selected?.id ?? undefined}>
-                {selected ? selected.id : 'Details'}
+                {selected ? `INC-${selected.id.split('-')[1] || selected.id.substring(0,8).toUpperCase()}` : 'Details'}
               </span>
               <button
                 type="button"
@@ -445,6 +484,9 @@ export default function IncidentMap() {
                             : '—'}
                         </div>
                       </div>
+                      
+                      <IncidentLifecycleTimeline status={selected.status} />
+
                       <div className={styles.timelineList}>
                         <div className={styles.timelineRow}>
                           <div className={styles.timelineLabel}>Position</div>
@@ -456,6 +498,14 @@ export default function IncidentMap() {
                           <div className={styles.timelineRow}>
                             <div className={styles.timelineLabel}>Model</div>
                             <div className={styles.timelineValue}>{selected.model_version}</div>
+                          </div>
+                        ) : null}
+                        {selected.extra_metadata?.vessel_id ? (
+                          <div className={styles.timelineRow}>
+                            <div className={styles.timelineLabel}>Vessel</div>
+                            <div className={styles.timelineValue} style={{fontFamily: 'var(--font-mono)'}}>
+                              {String(selected.extra_metadata.vessel_id)}
+                            </div>
                           </div>
                         ) : null}
                         {selected.processing_time != null ? (

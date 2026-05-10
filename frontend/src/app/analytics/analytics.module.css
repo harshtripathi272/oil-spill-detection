@@ -1,39 +1,227 @@
 .page {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
 }
 
 .pageHeader h1 {
-  font-size: 22px;
+  font-size: 24px;
+  font-weight: 600;
   margin-bottom: 4px;
 }
 
 .subtitle {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text-muted);
 }
 
+/* KPI Row */
+.kpiGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.kpiCard {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.kpiHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kpiIconAlert { color: var(--danger); }
+.kpiIconSuccess { color: var(--success); }
+.kpiIconWarning { color: var(--warning); }
+.kpiIconInfo { color: var(--info); }
+
+.kpiTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.kpiValue {
+  font-size: 32px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.kpiSub {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Main Grid */
 .grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
 }
 
 .chartSection {
-  padding: 18px;
+  padding: 20px;
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+}
+
+.chartHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
 }
 
 .cardTitle {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
-  margin-bottom: 16px;
+  margin: 0;
 }
 
+.chartMeta {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.textMuted { color: var(--text-muted); }
+
+/* Toggle */
+.toggleGroup {
+  display: flex;
+  background: var(--bg-input);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+}
+
+.toggleBtn {
+  background: transparent;
+  border: none;
+  padding: 4px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.toggleActive {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+/* Trend Chart */
+.trendChart {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex: 1;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.trendCol {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+  position: relative;
+}
+
+.trendBar {
+  width: 100%;
+  max-width: 24px;
+  background: linear-gradient(to top, rgba(59, 130, 246, 0.2), var(--accent-blue));
+  border-radius: 3px 3px 0 0;
+  min-height: 4px;
+  position: relative;
+  transition: all 0.2s;
+}
+
+.trendBar:hover {
+  background: var(--accent-cyan);
+}
+
+.trendTooltip {
+  position: absolute;
+  top: -24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-elevated);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+}
+
+.trendBar:hover .trendTooltip {
+  opacity: 1;
+}
+
+.trendLabel {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-top: 8px;
+}
+
+/* Peak Chart */
+.peakChart {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  flex: 1;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.peakCol {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+}
+
+.peakBar {
+  width: 100%;
+  background: var(--bg-input);
+  border-radius: 2px 2px 0 0;
+  min-height: 2px;
+}
+
+.peakBarMax {
+  background: var(--warning);
+}
+
+.peakLabel {
+  font-size: 9px;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+
+/* Bar Lists (Horizontal) */
 .barList {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  flex: 1;
+  justify-content: center;
 }
 
 .barRow {
@@ -43,53 +231,109 @@
 }
 
 .barLabel {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
+  width: 100px;
+  font-size: 12px;
   color: var(--text-secondary);
-  min-width: 100px;
-  text-transform: capitalize;
-}
-
-.barDot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
   flex-shrink: 0;
 }
 
 .barTrack {
   flex: 1;
-  height: 8px;
+  height: 6px;
   background: var(--bg-input);
-  border-radius: 4px;
+  border-radius: 3px;
   overflow: hidden;
 }
 
-.barFill {
-  height: 100%;
-  border-radius: 4px;
-  transition: width 0.3s;
+.barFillBlue { height: 100%; background: var(--accent-blue); }
+.barFillGreen { height: 100%; background: var(--success); }
+
+.barValue {
+  width: 32px;
+  text-align: right;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
 }
 
-.barCount {
+/* Lifecycle Pipeline */
+.lifecycleFlow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex: 1;
+  padding: 20px 0;
+}
+
+.lifecycleNodeWrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.lifecycleNode {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 12px 20px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  min-width: 120px;
+}
+
+.lifecycleVerified {
+  border-color: var(--success);
+  background: rgba(16, 185, 129, 0.05);
+}
+
+.lifecycleFalse {
+  border-color: var(--text-muted);
+}
+
+.lifecycleCount {
+  font-size: 20px;
+  font-weight: 700;
   font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--text-muted);
-  min-width: 60px;
-  text-align: right;
+}
+
+.lifecycleLabel {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+}
+
+.lifecycleLine {
+  width: 30px;
+  height: 2px;
+  background: var(--border-active);
+  position: relative;
+}
+
+.lifecycleLine::after {
+  content: '';
+  position: absolute;
+  right: -4px;
+  top: -3px;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 6px solid var(--border-active);
 }
 
 .loading {
   color: var(--text-muted);
   font-size: 13px;
   padding: 20px 0;
+  text-align: center;
 }
 
 .empty {
   color: var(--text-dim);
   font-size: 13px;
   text-align: center;
-  padding: 20px;
 }

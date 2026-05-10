@@ -4,8 +4,11 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.database import engine
 from app.models import Base
-from app.routers import dashboard, incidents, metrics, system, alerts, realtime, users, logs, pipeline, predictions
+from app.routers import dashboard, incidents, metrics, system, alerts, realtime, users, logs, pipeline, predictions, analytics, vessels
 import os
+
+# Repo root: backend/app/main.py -> ../.. = oil-spill-detection project root
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -38,17 +41,17 @@ app.include_router(users.router, prefix="/api/v1/users", tags=["users"])
 app.include_router(logs.router, prefix="/api/v1/logs", tags=["logs"])
 app.include_router(pipeline.router, prefix="/api/v1/pipeline", tags=["pipeline"])
 app.include_router(predictions.router, prefix="/api/v1/predictions", tags=["predictions"])
+app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["analytics"])
+app.include_router(vessels.router, prefix="/api/v1/vessels", tags=["vessels"])
 app.include_router(realtime.router, prefix="/ws", tags=["realtime"])
 
-# Mount SAR images as static files
-sar_dir = "/data/user13/oilspill_ugq/oil-spill-detection/sentinel_data/preprocessed"
-if os.path.isdir(sar_dir):
-    app.mount("/sar-images", StaticFiles(directory=sar_dir), name="sar-images")
-
-# Mount prediction output images as static files
-prediction_dir = "/data/user13/oilspill_ugq/oil-spill-detection/sentinel_data/predictions"
-if os.path.isdir(prediction_dir):
-    app.mount("/prediction-images", StaticFiles(directory=prediction_dir), name="prediction-images")
+# Mount SAR / prediction images (ensure dirs exist so empty installs do not break mounts)
+sar_dir = os.path.join(_REPO_ROOT, "sentinel_data", "preprocessed")
+prediction_dir = os.path.join(_REPO_ROOT, "sentinel_data", "predictions")
+os.makedirs(sar_dir, exist_ok=True)
+os.makedirs(prediction_dir, exist_ok=True)
+app.mount("/sar-images", StaticFiles(directory=sar_dir), name="sar-images")
+app.mount("/prediction-images", StaticFiles(directory=prediction_dir), name="prediction-images")
 
 @app.get("/health")
 async def health_check():

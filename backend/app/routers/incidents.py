@@ -75,7 +75,10 @@ async def update_incident_status(
     db: Session = Depends(get_db)
 ):
     """Update incident status"""
-    valid_statuses = ["DETECTED", "PENDING_IMAGERY", "IMAGERY_AVAILABLE", "DOWNLOADING", "PROCESSING", "VERIFIED", "FALSE_POSITIVE", "FAILED", "detected", "confirmed", "false_positive", "resolved"]
+    valid_statuses = [
+        "detected", "confirmed", "failed", "resolved", "false_positive",
+        "pending_imagery", "imagery_available", "downloading", "processing"
+    ]
     if status not in valid_statuses:
         raise HTTPException(
             status_code=400,

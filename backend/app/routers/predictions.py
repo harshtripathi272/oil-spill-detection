@@ -8,8 +8,21 @@ import os
 from app.database import get_db
 from app.models.predictions import Prediction
 from app.schemas.predictions import PredictionCreate, PredictionResponse, PredictionUpdate
+from app.placeholders import prediction_image_placeholder
 
 router = APIRouter(tags=["predictions"])
+
+# oil-spill-detection/ (contains sentinel_data/) — from backend/app/routers/ this file
+_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+
+
+def _resolved_prediction_image_path(raw: Optional[str]) -> Optional[str]:
+    if not raw or not str(raw).strip():
+        return None
+    p = str(raw).strip()
+    if os.path.isabs(p):
+        return p
+    return os.path.normpath(os.path.join(_PROJECT_ROOT, p))
 
 @router.get("/", response_model=List[PredictionResponse])
 @router.get("", response_model=List[PredictionResponse], include_in_schema=False)
@@ -124,17 +137,20 @@ def get_prediction_stats(db: Session = Depends(get_db)):
 
 @router.get("/{prediction_id}/image")
 def get_prediction_image(prediction_id: int, db: Session = Depends(get_db)):
-    """Serve prediction image file"""
+    """Serve prediction image file, or an SVG placeholder if missing (empty sentinel_data)."""
     prediction = db.query(Prediction).filter(Prediction.id == prediction_id).first()
-    if not prediction or not prediction.prediction_image_path:
-        raise HTTPException(status_code=404, detail="Prediction image not found")
+    if not prediction:
+        return prediction_image_placeholder()
 
-    # Check if file exists
-    if not os.path.exists(prediction.prediction_image_path):
-        raise HTTPException(status_code=404, detail="Prediction image file not found on disk")
+    path = _resolved_prediction_image_path(prediction.prediction_image_path)
+    if not path:
+        return prediction_image_placeholder()
+
+    if not os.path.isfile(path):
+        return prediction_image_placeholder()
 
     return FileResponse(
-        prediction.prediction_image_path,
-        media_type='image/jpeg',
-        filename=f"prediction_{prediction_id}.jpg"
+        path,
+        media_type="image/jpeg",
+        filename=f"prediction_{prediction_id}.jpg",
     )
